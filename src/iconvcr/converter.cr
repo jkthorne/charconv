@@ -487,20 +487,7 @@ class Iconvcr::Converter
     max_out += 16 if @to.stateful
     dst = Bytes.new(max_out)
     src_consumed, dst_written = convert(input, dst)
-
-    # Flush stateful encoders
-    if @to.id.utf7? && @state_encode.mode == 2_u8
-      flush_written = Codec::UTF7.flush_base64(dst, dst_written, pointerof(@state_encode))
-      dst_written += flush_written
-    elsif @to.id.iso2022_jp? || @to.id.iso2022_jp1? || @to.id.iso2022_jp2?
-      dst_written += Codec::ISO2022JP.flush(dst, dst_written, pointerof(@state_encode))
-    elsif @to.id.iso2022_cn? || @to.id.iso2022_cn_ext?
-      dst_written += Codec::ISO2022CN.flush(dst, dst_written, pointerof(@state_encode))
-    elsif @to.id.iso2022_kr?
-      dst_written += Codec::ISO2022KR.flush(dst, dst_written, pointerof(@state_encode))
-    elsif @to.id.hz?
-      dst_written += Codec::HZ.flush(dst, dst_written, pointerof(@state_encode))
-    end
+    dst_written += flush_encoder(dst, dst_written)
 
     if src_consumed < input.size
       unless @flags.ignore?
@@ -511,6 +498,65 @@ class Iconvcr::Converter
       # With //IGNORE, trailing incomplete sequences are silently discarded
     end
     dst[0, dst_written]
+  end
+
+  # IO streaming: reads from input, converts, writes to output.
+  # Handles partial consumption, multi-chunk processing, and stateful flush.
+  def convert(input : IO, output : IO, buffer_size : Int32 = 8192)
+    src_buf = Bytes.new(buffer_size)
+    dst_buf = Bytes.new(buffer_size * @to.max_bytes_per_char.to_i32)
+    src_len = 0
+
+    loop do
+      bytes_read = input.read(src_buf[src_len..])
+      src_len += bytes_read
+      at_eof = bytes_read == 0
+
+      break if src_len == 0 && at_eof
+
+      src = src_buf[0, src_len]
+      consumed, written = convert(src, dst_buf)
+      output.write(dst_buf[0, written]) if written > 0
+
+      remaining = src_len - consumed
+      if remaining > 0
+        if at_eof
+          # Unconsumed bytes at EOF — incomplete sequence
+          unless @flags.ignore?
+            raise Iconvcr::ConversionError.new(
+              "Incomplete sequence at end of input (#{remaining} byte(s) remaining)"
+            )
+          end
+          break
+        end
+        src_buf.move_to(src_buf) if consumed > 0
+        (src_buf.to_unsafe + consumed).copy_to(src_buf.to_unsafe, remaining) if consumed > 0
+      end
+      src_len = remaining
+
+      break if at_eof
+    end
+
+    # Flush stateful encoders
+    flush_written = flush_encoder(dst_buf, 0)
+    output.write(dst_buf[0, flush_written]) if flush_written > 0
+  end
+
+  # Flush stateful encoder state to dst. Returns bytes written.
+  private def flush_encoder(dst : Bytes, pos : Int32) : Int32
+    if @to.id.utf7? && @state_encode.mode == 2_u8
+      Codec::UTF7.flush_base64(dst, pos, pointerof(@state_encode))
+    elsif @to.id.iso2022_jp? || @to.id.iso2022_jp1? || @to.id.iso2022_jp2?
+      Codec::ISO2022JP.flush(dst, pos, pointerof(@state_encode))
+    elsif @to.id.iso2022_cn? || @to.id.iso2022_cn_ext?
+      Codec::ISO2022CN.flush(dst, pos, pointerof(@state_encode))
+    elsif @to.id.iso2022_kr?
+      Codec::ISO2022KR.flush(dst, pos, pointerof(@state_encode))
+    elsif @to.id.hz?
+      Codec::HZ.flush(dst, pos, pointerof(@state_encode))
+    else
+      0
+    end
   end
 
   def reset

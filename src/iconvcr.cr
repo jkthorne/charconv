@@ -38,6 +38,11 @@ module Iconvcr
     convert(input.to_slice, from, to)
   end
 
+  def self.convert(input : IO, output : IO, from : String, to : String, buffer_size : Int32 = 8192)
+    converter = Converter.new(from, to)
+    converter.convert(input, output, buffer_size)
+  end
+
   def self.encoding_supported?(name : String) : Bool
     !Registry.lookup(name).nil?
   end
