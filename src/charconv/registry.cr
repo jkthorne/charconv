@@ -1,544 +1,552 @@
 module CharConv::Registry
-  private ASCII_INFO      = EncodingInfo.new(EncodingID::ASCII, true, 1_u8, false)
-  private UTF8_INFO       = EncodingInfo.new(EncodingID::UTF8, true, 4_u8, false)
-  private ISO_8859_1_INFO = EncodingInfo.new(EncodingID::ISO_8859_1, true, 1_u8, false)
+  # EncodingID → EncodingInfo flat array. Indexed by EncodingID.value.
+  # Each entry: {ascii_superset, max_bytes_per_char, stateful}
+  ENCODING_INFO = begin
+    arr = Array(EncodingInfo).new(EncodingID.values.size) { |i|
+      id = EncodingID.new(i.to_u16)
+      EncodingInfo.new(id, false, 1_u8, false) # placeholder
+    }
 
-  {% for id in %w[ISO_8859_2 ISO_8859_3 ISO_8859_4 ISO_8859_5 ISO_8859_6 ISO_8859_7
-                  ISO_8859_8 ISO_8859_9 ISO_8859_10 ISO_8859_11 ISO_8859_13 ISO_8859_14
-                  ISO_8859_15 ISO_8859_16
-                  CP1250 CP1251 CP1252 CP1253 CP1254 CP1255 CP1256 CP1257 CP1258
-                  KOI8_R KOI8_U KOI8_RU
-                  CP437 CP737 CP775 CP850 CP852 CP855 CP857 CP858 CP860 CP861 CP862 CP863
-                  CP865 CP866 CP869
-                  CP874 TIS_620 ARMSCII_8 GEORGIAN_ACADEMY GEORGIAN_PS HP_ROMAN8
-                  NEXTSTEP PT154 KOI8_T
-                  CP856 CP922 CP853 CP1046 CP1124 CP1125 CP1129 CP1131
-                  CP1133 CP1161 CP1162 CP1163 ATARIST KZ_1048 MULELAO_1 RISCOS_LATIN1] %}
-    private {{ id.upcase.id }}_INFO = EncodingInfo.new(EncodingID::{{ id.id }}, true, 1_u8, false)
-  {% end %}
+    # ASCII-superset single-byte (ascii_superset=true, max=1, stateful=false)
+    {% for id in %w[ASCII UTF8 ISO_8859_1
+                    ISO_8859_2 ISO_8859_3 ISO_8859_4 ISO_8859_5 ISO_8859_6 ISO_8859_7
+                    ISO_8859_8 ISO_8859_9 ISO_8859_10 ISO_8859_11 ISO_8859_13 ISO_8859_14
+                    ISO_8859_15 ISO_8859_16
+                    CP1250 CP1251 CP1252 CP1253 CP1254 CP1255 CP1256 CP1257 CP1258
+                    KOI8_R KOI8_U KOI8_RU
+                    CP437 CP737 CP775 CP850 CP852 CP855 CP857 CP858 CP860 CP861 CP862 CP863
+                    CP865 CP866 CP869
+                    CP874 TIS_620 ARMSCII_8 GEORGIAN_ACADEMY GEORGIAN_PS HP_ROMAN8
+                    NEXTSTEP PT154 KOI8_T
+                    CP856 CP922 CP853 CP1046 CP1124 CP1125 CP1129 CP1131
+                    CP1133 CP1161 CP1162 CP1163 ATARIST KZ_1048 MULELAO_1 RISCOS_LATIN1] %}
+      arr[EncodingID::{{ id.id }}.value] = EncodingInfo.new(EncodingID::{{ id.id }}, true, 1_u8, false)
+    {% end %}
 
-  # Mac encodings, CP864, and VISCII are NOT pure ASCII supersets (byte 0x7F or others differ)
-  {% for id in %w[MAC_ROMAN MAC_CENTRAL_EUROPE MAC_ICELAND MAC_CROATIAN MAC_ROMANIA
-                  MAC_CYRILLIC MAC_UKRAINE MAC_GREEK MAC_TURKISH MAC_HEBREW MAC_ARABIC MAC_THAI
-                  CP864 VISCII] %}
-    private {{ id.upcase.id }}_INFO = EncodingInfo.new(EncodingID::{{ id.id }}, false, 1_u8, false)
-  {% end %}
+    # UTF-8 needs max_bytes=4
+    arr[EncodingID::UTF8.value] = EncodingInfo.new(EncodingID::UTF8, true, 4_u8, false)
 
-  # EBCDIC encodings and TCVN are NOT ASCII supersets
-  {% for id in %w[CP037 CP273 CP277 CP278 CP280 CP284 CP285 CP297
-                  CP423 CP424 CP500 CP905 CP1026 TCVN] %}
-    private {{ id.upcase.id }}_INFO = EncodingInfo.new(EncodingID::{{ id.id }}, false, 1_u8, false)
-  {% end %}
+    # Non-ASCII single-byte (ascii_superset=false, max=1, stateful=false)
+    {% for id in %w[MAC_ROMAN MAC_CENTRAL_EUROPE MAC_ICELAND MAC_CROATIAN MAC_ROMANIA
+                    MAC_CYRILLIC MAC_UKRAINE MAC_GREEK MAC_TURKISH MAC_HEBREW MAC_ARABIC MAC_THAI
+                    CP864 VISCII
+                    CP037 CP273 CP277 CP278 CP280 CP284 CP285 CP297
+                    CP423 CP424 CP500 CP905 CP1026 TCVN] %}
+      arr[EncodingID::{{ id.id }}.value] = EncodingInfo.new(EncodingID::{{ id.id }}, false, 1_u8, false)
+    {% end %}
 
-  # Phase 4: CJK stateless encodings (all ASCII supersets)
-  private EUC_JP_INFO     = EncodingInfo.new(EncodingID::EUC_JP, true, 3_u8, false)
-  private SHIFT_JIS_INFO  = EncodingInfo.new(EncodingID::SHIFT_JIS, false, 2_u8, false)  # 0x5C=¥, 0x7E=‾
-  private CP932_INFO      = EncodingInfo.new(EncodingID::CP932, false, 2_u8, false)       # same as Shift_JIS
-  private GBK_INFO        = EncodingInfo.new(EncodingID::GBK, true, 2_u8, false)
-  private GB2312_INFO     = EncodingInfo.new(EncodingID::GB2312, true, 2_u8, false)
-  private EUC_CN_INFO     = EncodingInfo.new(EncodingID::EUC_CN, true, 2_u8, false)
-  private GB18030_INFO    = EncodingInfo.new(EncodingID::GB18030, true, 4_u8, false)
-  private BIG5_INFO       = EncodingInfo.new(EncodingID::BIG5, true, 2_u8, false)
-  private CP950_INFO      = EncodingInfo.new(EncodingID::CP950, true, 2_u8, false)
-  private BIG5_HKSCS_INFO = EncodingInfo.new(EncodingID::BIG5_HKSCS, true, 2_u8, false)
-  private EUC_KR_INFO     = EncodingInfo.new(EncodingID::EUC_KR, true, 2_u8, false)
-  private CP949_INFO      = EncodingInfo.new(EncodingID::CP949, true, 2_u8, false)
-  private EUC_TW_INFO     = EncodingInfo.new(EncodingID::EUC_TW, true, 4_u8, false)
-  private JOHAB_INFO      = EncodingInfo.new(EncodingID::JOHAB, true, 2_u8, false)
+    # CJK stateless
+    arr[EncodingID::EUC_JP.value]     = EncodingInfo.new(EncodingID::EUC_JP, true, 3_u8, false)
+    arr[EncodingID::SHIFT_JIS.value]  = EncodingInfo.new(EncodingID::SHIFT_JIS, false, 2_u8, false)
+    arr[EncodingID::CP932.value]      = EncodingInfo.new(EncodingID::CP932, false, 2_u8, false)
+    arr[EncodingID::GBK.value]        = EncodingInfo.new(EncodingID::GBK, true, 2_u8, false)
+    arr[EncodingID::GB2312.value]     = EncodingInfo.new(EncodingID::GB2312, true, 2_u8, false)
+    arr[EncodingID::EUC_CN.value]     = EncodingInfo.new(EncodingID::EUC_CN, true, 2_u8, false)
+    arr[EncodingID::GB18030.value]    = EncodingInfo.new(EncodingID::GB18030, true, 4_u8, false)
+    arr[EncodingID::BIG5.value]       = EncodingInfo.new(EncodingID::BIG5, true, 2_u8, false)
+    arr[EncodingID::CP950.value]      = EncodingInfo.new(EncodingID::CP950, true, 2_u8, false)
+    arr[EncodingID::BIG5_HKSCS.value] = EncodingInfo.new(EncodingID::BIG5_HKSCS, true, 2_u8, false)
+    arr[EncodingID::EUC_KR.value]     = EncodingInfo.new(EncodingID::EUC_KR, true, 2_u8, false)
+    arr[EncodingID::CP949.value]      = EncodingInfo.new(EncodingID::CP949, true, 2_u8, false)
+    arr[EncodingID::EUC_TW.value]     = EncodingInfo.new(EncodingID::EUC_TW, true, 4_u8, false)
+    arr[EncodingID::JOHAB.value]      = EncodingInfo.new(EncodingID::JOHAB, true, 2_u8, false)
 
-  # Phase 4: CJK stateful encodings (NOT ASCII supersets)
-  private ISO2022_JP_INFO    = EncodingInfo.new(EncodingID::ISO2022_JP, false, 8_u8, true)
-  private ISO2022_JP1_INFO   = EncodingInfo.new(EncodingID::ISO2022_JP1, false, 8_u8, true)
-  private ISO2022_JP2_INFO   = EncodingInfo.new(EncodingID::ISO2022_JP2, false, 8_u8, true)
-  private ISO2022_CN_INFO    = EncodingInfo.new(EncodingID::ISO2022_CN, false, 8_u8, true)
-  private ISO2022_CN_EXT_INFO = EncodingInfo.new(EncodingID::ISO2022_CN_EXT, false, 8_u8, true)
-  private ISO2022_KR_INFO    = EncodingInfo.new(EncodingID::ISO2022_KR, false, 8_u8, true)
-  private HZ_INFO            = EncodingInfo.new(EncodingID::HZ, false, 4_u8, true)
+    # CJK stateful
+    {% for id in %w[ISO2022_JP ISO2022_JP1 ISO2022_JP2 ISO2022_CN ISO2022_CN_EXT ISO2022_KR] %}
+      arr[EncodingID::{{ id.id }}.value] = EncodingInfo.new(EncodingID::{{ id.id }}, false, 8_u8, true)
+    {% end %}
+    arr[EncodingID::HZ.value] = EncodingInfo.new(EncodingID::HZ, false, 4_u8, true)
 
-  # Phase 3: Unicode family encodings (none are ASCII supersets)
-  private UTF16_BE_INFO  = EncodingInfo.new(EncodingID::UTF16_BE, false, 4_u8, false)
-  private UTF16_LE_INFO  = EncodingInfo.new(EncodingID::UTF16_LE, false, 4_u8, false)
-  private UTF16_INFO     = EncodingInfo.new(EncodingID::UTF16, false, 4_u8, true)
-  private UTF32_BE_INFO  = EncodingInfo.new(EncodingID::UTF32_BE, false, 4_u8, false)
-  private UTF32_LE_INFO  = EncodingInfo.new(EncodingID::UTF32_LE, false, 4_u8, false)
-  private UTF32_INFO     = EncodingInfo.new(EncodingID::UTF32, false, 4_u8, true)
-  private UCS2_INFO      = EncodingInfo.new(EncodingID::UCS2, false, 2_u8, true)
-  private UCS2_BE_INFO   = EncodingInfo.new(EncodingID::UCS2_BE, false, 2_u8, false)
-  private UCS2_LE_INFO   = EncodingInfo.new(EncodingID::UCS2_LE, false, 2_u8, false)
-  private UCS2_INTERNAL_INFO = EncodingInfo.new(EncodingID::UCS2_INTERNAL, false, 2_u8, false)
-  private UCS2_SWAPPED_INFO  = EncodingInfo.new(EncodingID::UCS2_SWAPPED, false, 2_u8, false)
-  private UCS4_INFO      = EncodingInfo.new(EncodingID::UCS4, false, 4_u8, true)
-  private UCS4_BE_INFO   = EncodingInfo.new(EncodingID::UCS4_BE, false, 4_u8, false)
-  private UCS4_LE_INFO   = EncodingInfo.new(EncodingID::UCS4_LE, false, 4_u8, false)
-  private UCS4_INTERNAL_INFO = EncodingInfo.new(EncodingID::UCS4_INTERNAL, false, 4_u8, false)
-  private UCS4_SWAPPED_INFO  = EncodingInfo.new(EncodingID::UCS4_SWAPPED, false, 4_u8, false)
-  private UTF7_INFO      = EncodingInfo.new(EncodingID::UTF7, false, 8_u8, true)
-  private C99_INFO       = EncodingInfo.new(EncodingID::C99, false, 10_u8, false)
-  private JAVA_INFO      = EncodingInfo.new(EncodingID::JAVA, false, 12_u8, false)
+    # Unicode family (none are ASCII supersets)
+    {% for id in %w[UTF16_BE UTF16_LE UTF32_BE UTF32_LE] %}
+      arr[EncodingID::{{ id.id }}.value] = EncodingInfo.new(EncodingID::{{ id.id }}, false, 4_u8, false)
+    {% end %}
+    arr[EncodingID::UTF16.value] = EncodingInfo.new(EncodingID::UTF16, false, 4_u8, true)
+    arr[EncodingID::UTF32.value] = EncodingInfo.new(EncodingID::UTF32, false, 4_u8, true)
 
-  ENCODINGS = {
+    arr[EncodingID::UCS2.value]          = EncodingInfo.new(EncodingID::UCS2, false, 2_u8, true)
+    arr[EncodingID::UCS2_BE.value]       = EncodingInfo.new(EncodingID::UCS2_BE, false, 2_u8, false)
+    arr[EncodingID::UCS2_LE.value]       = EncodingInfo.new(EncodingID::UCS2_LE, false, 2_u8, false)
+    arr[EncodingID::UCS2_INTERNAL.value] = EncodingInfo.new(EncodingID::UCS2_INTERNAL, false, 2_u8, false)
+    arr[EncodingID::UCS2_SWAPPED.value]  = EncodingInfo.new(EncodingID::UCS2_SWAPPED, false, 2_u8, false)
+
+    arr[EncodingID::UCS4.value]          = EncodingInfo.new(EncodingID::UCS4, false, 4_u8, true)
+    arr[EncodingID::UCS4_BE.value]       = EncodingInfo.new(EncodingID::UCS4_BE, false, 4_u8, false)
+    arr[EncodingID::UCS4_LE.value]       = EncodingInfo.new(EncodingID::UCS4_LE, false, 4_u8, false)
+    arr[EncodingID::UCS4_INTERNAL.value] = EncodingInfo.new(EncodingID::UCS4_INTERNAL, false, 4_u8, false)
+    arr[EncodingID::UCS4_SWAPPED.value]  = EncodingInfo.new(EncodingID::UCS4_SWAPPED, false, 4_u8, false)
+
+    arr[EncodingID::UTF7.value] = EncodingInfo.new(EncodingID::UTF7, false, 8_u8, true)
+    arr[EncodingID::C99.value]  = EncodingInfo.new(EncodingID::C99, false, 10_u8, false)
+    arr[EncodingID::JAVA.value] = EncodingInfo.new(EncodingID::JAVA, false, 12_u8, false)
+
+    arr
+  end
+
+  # Normalized name → EncodingID (alias resolution)
+  ALIASES = {
     # ASCII
-    "ASCII"       => ASCII_INFO,
-    "USASCII"     => ASCII_INFO,
-    "ANSIX341968" => ASCII_INFO,
-    "ISO646US"    => ASCII_INFO,
-    "646"         => ASCII_INFO,
-    "CHAR"        => ASCII_INFO,
-    "CSASCII"     => ASCII_INFO,
-    "ISOIR6"      => ASCII_INFO,
-    "ISO6461991"  => ASCII_INFO,
-    "IBM367"      => ASCII_INFO,
-    "CP367"       => ASCII_INFO,
+    "ASCII"       => EncodingID::ASCII,
+    "USASCII"     => EncodingID::ASCII,
+    "ANSIX341968" => EncodingID::ASCII,
+    "ISO646US"    => EncodingID::ASCII,
+    "646"         => EncodingID::ASCII,
+    "CHAR"        => EncodingID::ASCII,
+    "CSASCII"     => EncodingID::ASCII,
+    "ISOIR6"      => EncodingID::ASCII,
+    "ISO6461991"  => EncodingID::ASCII,
+    "IBM367"      => EncodingID::ASCII,
+    "CP367"       => EncodingID::ASCII,
 
     # UTF-8
-    "UTF8" => UTF8_INFO,
+    "UTF8" => EncodingID::UTF8,
 
     # ISO-8859-1
-    "ISO88591"     => ISO_8859_1_INFO,
-    "LATIN1"       => ISO_8859_1_INFO,
-    "ISO885911987"  => ISO_8859_1_INFO,
-    "CP819"        => ISO_8859_1_INFO,
-    "IBM819"       => ISO_8859_1_INFO,
-    "ISOIR100"     => ISO_8859_1_INFO,
-    "L1"           => ISO_8859_1_INFO,
-    "CSISOLATIN1"  => ISO_8859_1_INFO,
+    "ISO88591"     => EncodingID::ISO_8859_1,
+    "LATIN1"       => EncodingID::ISO_8859_1,
+    "ISO885911987" => EncodingID::ISO_8859_1,
+    "CP819"        => EncodingID::ISO_8859_1,
+    "IBM819"       => EncodingID::ISO_8859_1,
+    "ISOIR100"     => EncodingID::ISO_8859_1,
+    "L1"           => EncodingID::ISO_8859_1,
+    "CSISOLATIN1"  => EncodingID::ISO_8859_1,
 
     # ISO-8859-2
-    "ISO88592"     => ISO_8859_2_INFO,
-    "LATIN2"       => ISO_8859_2_INFO,
-    "ISO885921987" => ISO_8859_2_INFO,
-    "ISOIR101"     => ISO_8859_2_INFO,
-    "L2"           => ISO_8859_2_INFO,
-    "CSISOLATIN2"  => ISO_8859_2_INFO,
+    "ISO88592"     => EncodingID::ISO_8859_2,
+    "LATIN2"       => EncodingID::ISO_8859_2,
+    "ISO885921987" => EncodingID::ISO_8859_2,
+    "ISOIR101"     => EncodingID::ISO_8859_2,
+    "L2"           => EncodingID::ISO_8859_2,
+    "CSISOLATIN2"  => EncodingID::ISO_8859_2,
 
     # ISO-8859-3
-    "ISO88593"     => ISO_8859_3_INFO,
-    "LATIN3"       => ISO_8859_3_INFO,
-    "ISO885931988" => ISO_8859_3_INFO,
-    "ISOIR109"     => ISO_8859_3_INFO,
-    "L3"           => ISO_8859_3_INFO,
-    "CSISOLATIN3"  => ISO_8859_3_INFO,
+    "ISO88593"     => EncodingID::ISO_8859_3,
+    "LATIN3"       => EncodingID::ISO_8859_3,
+    "ISO885931988" => EncodingID::ISO_8859_3,
+    "ISOIR109"     => EncodingID::ISO_8859_3,
+    "L3"           => EncodingID::ISO_8859_3,
+    "CSISOLATIN3"  => EncodingID::ISO_8859_3,
 
     # ISO-8859-4
-    "ISO88594"     => ISO_8859_4_INFO,
-    "LATIN4"       => ISO_8859_4_INFO,
-    "ISO885941988" => ISO_8859_4_INFO,
-    "ISOIR110"     => ISO_8859_4_INFO,
-    "L4"           => ISO_8859_4_INFO,
-    "CSISOLATIN4"  => ISO_8859_4_INFO,
+    "ISO88594"     => EncodingID::ISO_8859_4,
+    "LATIN4"       => EncodingID::ISO_8859_4,
+    "ISO885941988" => EncodingID::ISO_8859_4,
+    "ISOIR110"     => EncodingID::ISO_8859_4,
+    "L4"           => EncodingID::ISO_8859_4,
+    "CSISOLATIN4"  => EncodingID::ISO_8859_4,
 
     # ISO-8859-5
-    "ISO88595"           => ISO_8859_5_INFO,
-    "CYRILLIC"           => ISO_8859_5_INFO,
-    "ISO885951988"       => ISO_8859_5_INFO,
-    "ISOIR144"           => ISO_8859_5_INFO,
-    "CSISOLATINCYRILLIC" => ISO_8859_5_INFO,
+    "ISO88595"           => EncodingID::ISO_8859_5,
+    "CYRILLIC"           => EncodingID::ISO_8859_5,
+    "ISO885951988"       => EncodingID::ISO_8859_5,
+    "ISOIR144"           => EncodingID::ISO_8859_5,
+    "CSISOLATINCYRILLIC" => EncodingID::ISO_8859_5,
 
     # ISO-8859-6
-    "ISO88596"           => ISO_8859_6_INFO,
-    "ARABIC"             => ISO_8859_6_INFO,
-    "ISO885961987"       => ISO_8859_6_INFO,
-    "ISOIR127"           => ISO_8859_6_INFO,
-    "ASMO708"            => ISO_8859_6_INFO,
-    "ECMA114"            => ISO_8859_6_INFO,
-    "CSISOLATINARABIC"   => ISO_8859_6_INFO,
+    "ISO88596"           => EncodingID::ISO_8859_6,
+    "ARABIC"             => EncodingID::ISO_8859_6,
+    "ISO885961987"       => EncodingID::ISO_8859_6,
+    "ISOIR127"           => EncodingID::ISO_8859_6,
+    "ASMO708"            => EncodingID::ISO_8859_6,
+    "ECMA114"            => EncodingID::ISO_8859_6,
+    "CSISOLATINARABIC"   => EncodingID::ISO_8859_6,
 
     # ISO-8859-7
-    "ISO88597"     => ISO_8859_7_INFO,
-    "GREEK"        => ISO_8859_7_INFO,
-    "GREEK8"       => ISO_8859_7_INFO,
-    "ISO885972003" => ISO_8859_7_INFO,
-    "ISO885971987" => ISO_8859_7_INFO,
-    "ISOIR126"     => ISO_8859_7_INFO,
-    "ECMA118"      => ISO_8859_7_INFO,
-    "ELOT928"      => ISO_8859_7_INFO,
+    "ISO88597"     => EncodingID::ISO_8859_7,
+    "GREEK"        => EncodingID::ISO_8859_7,
+    "GREEK8"       => EncodingID::ISO_8859_7,
+    "ISO885972003" => EncodingID::ISO_8859_7,
+    "ISO885971987" => EncodingID::ISO_8859_7,
+    "ISOIR126"     => EncodingID::ISO_8859_7,
+    "ECMA118"      => EncodingID::ISO_8859_7,
+    "ELOT928"      => EncodingID::ISO_8859_7,
 
     # ISO-8859-8
-    "ISO88598"     => ISO_8859_8_INFO,
-    "HEBREW"       => ISO_8859_8_INFO,
-    "ISO885981988" => ISO_8859_8_INFO,
-    "ISOIR138"     => ISO_8859_8_INFO,
+    "ISO88598"     => EncodingID::ISO_8859_8,
+    "HEBREW"       => EncodingID::ISO_8859_8,
+    "ISO885981988" => EncodingID::ISO_8859_8,
+    "ISOIR138"     => EncodingID::ISO_8859_8,
 
     # ISO-8859-9
-    "ISO88599"     => ISO_8859_9_INFO,
-    "LATIN5"       => ISO_8859_9_INFO,
-    "ISO885991989" => ISO_8859_9_INFO,
-    "ISOIR148"     => ISO_8859_9_INFO,
-    "L5"           => ISO_8859_9_INFO,
-    "CSISOLATIN5"  => ISO_8859_9_INFO,
+    "ISO88599"     => EncodingID::ISO_8859_9,
+    "LATIN5"       => EncodingID::ISO_8859_9,
+    "ISO885991989" => EncodingID::ISO_8859_9,
+    "ISOIR148"     => EncodingID::ISO_8859_9,
+    "L5"           => EncodingID::ISO_8859_9,
+    "CSISOLATIN5"  => EncodingID::ISO_8859_9,
 
     # ISO-8859-10
-    "ISO885910"     => ISO_8859_10_INFO,
-    "LATIN6"        => ISO_8859_10_INFO,
-    "ISO8859101992" => ISO_8859_10_INFO,
-    "ISOIR157"      => ISO_8859_10_INFO,
+    "ISO885910"     => EncodingID::ISO_8859_10,
+    "LATIN6"        => EncodingID::ISO_8859_10,
+    "ISO8859101992" => EncodingID::ISO_8859_10,
+    "ISOIR157"      => EncodingID::ISO_8859_10,
 
     # ISO-8859-11
-    "ISO885911" => ISO_8859_11_INFO,
+    "ISO885911" => EncodingID::ISO_8859_11,
 
     # ISO-8859-13
-    "ISO885913" => ISO_8859_13_INFO,
-    "LATIN7"    => ISO_8859_13_INFO,
-    "ISOIR179"  => ISO_8859_13_INFO,
+    "ISO885913" => EncodingID::ISO_8859_13,
+    "LATIN7"    => EncodingID::ISO_8859_13,
+    "ISOIR179"  => EncodingID::ISO_8859_13,
 
     # ISO-8859-14
-    "ISO885914"     => ISO_8859_14_INFO,
-    "LATIN8"        => ISO_8859_14_INFO,
-    "ISO8859141998" => ISO_8859_14_INFO,
-    "ISOIR199"      => ISO_8859_14_INFO,
-    "ISOCELTIC"     => ISO_8859_14_INFO,
+    "ISO885914"     => EncodingID::ISO_8859_14,
+    "LATIN8"        => EncodingID::ISO_8859_14,
+    "ISO8859141998" => EncodingID::ISO_8859_14,
+    "ISOIR199"      => EncodingID::ISO_8859_14,
+    "ISOCELTIC"     => EncodingID::ISO_8859_14,
 
     # ISO-8859-15
-    "ISO885915"     => ISO_8859_15_INFO,
-    "LATIN9"        => ISO_8859_15_INFO,
-    "ISO8859151998" => ISO_8859_15_INFO,
-    "ISOIR203"      => ISO_8859_15_INFO,
+    "ISO885915"     => EncodingID::ISO_8859_15,
+    "LATIN9"        => EncodingID::ISO_8859_15,
+    "ISO8859151998" => EncodingID::ISO_8859_15,
+    "ISOIR203"      => EncodingID::ISO_8859_15,
 
     # ISO-8859-16
-    "ISO885916"     => ISO_8859_16_INFO,
-    "LATIN10"       => ISO_8859_16_INFO,
-    "ISO8859162001" => ISO_8859_16_INFO,
-    "ISOIR226"      => ISO_8859_16_INFO,
+    "ISO885916"     => EncodingID::ISO_8859_16,
+    "LATIN10"       => EncodingID::ISO_8859_16,
+    "ISO8859162001" => EncodingID::ISO_8859_16,
+    "ISOIR226"      => EncodingID::ISO_8859_16,
 
     # Windows code pages
-    "CP1250"       => CP1250_INFO,
-    "WINDOWS1250"  => CP1250_INFO,
-    "MSEE"         => CP1250_INFO,
+    "CP1250"       => EncodingID::CP1250,
+    "WINDOWS1250"  => EncodingID::CP1250,
+    "MSEE"         => EncodingID::CP1250,
 
-    "CP1251"       => CP1251_INFO,
-    "WINDOWS1251"  => CP1251_INFO,
-    "MSCYRL"       => CP1251_INFO,
+    "CP1251"       => EncodingID::CP1251,
+    "WINDOWS1251"  => EncodingID::CP1251,
+    "MSCYRL"       => EncodingID::CP1251,
 
-    "CP1252"       => CP1252_INFO,
-    "WINDOWS1252"  => CP1252_INFO,
-    "MSANSI"       => CP1252_INFO,
+    "CP1252"       => EncodingID::CP1252,
+    "WINDOWS1252"  => EncodingID::CP1252,
+    "MSANSI"       => EncodingID::CP1252,
 
-    "CP1253"       => CP1253_INFO,
-    "WINDOWS1253"  => CP1253_INFO,
-    "MSGREEK"      => CP1253_INFO,
+    "CP1253"       => EncodingID::CP1253,
+    "WINDOWS1253"  => EncodingID::CP1253,
+    "MSGREEK"      => EncodingID::CP1253,
 
-    "CP1254"       => CP1254_INFO,
-    "WINDOWS1254"  => CP1254_INFO,
-    "MSTURK"       => CP1254_INFO,
+    "CP1254"       => EncodingID::CP1254,
+    "WINDOWS1254"  => EncodingID::CP1254,
+    "MSTURK"       => EncodingID::CP1254,
 
-    "CP1255"       => CP1255_INFO,
-    "WINDOWS1255"  => CP1255_INFO,
-    "MSHEBR"       => CP1255_INFO,
+    "CP1255"       => EncodingID::CP1255,
+    "WINDOWS1255"  => EncodingID::CP1255,
+    "MSHEBR"       => EncodingID::CP1255,
 
-    "CP1256"       => CP1256_INFO,
-    "WINDOWS1256"  => CP1256_INFO,
-    "MSARAB"       => CP1256_INFO,
+    "CP1256"       => EncodingID::CP1256,
+    "WINDOWS1256"  => EncodingID::CP1256,
+    "MSARAB"       => EncodingID::CP1256,
 
-    "CP1257"       => CP1257_INFO,
-    "WINDOWS1257"  => CP1257_INFO,
-    "WINBALTRIM"   => CP1257_INFO,
+    "CP1257"       => EncodingID::CP1257,
+    "WINDOWS1257"  => EncodingID::CP1257,
+    "WINBALTRIM"   => EncodingID::CP1257,
 
-    "CP1258"       => CP1258_INFO,
-    "WINDOWS1258"  => CP1258_INFO,
+    "CP1258"       => EncodingID::CP1258,
+    "WINDOWS1258"  => EncodingID::CP1258,
 
     # KOI8
-    "KOI8R"  => KOI8_R_INFO,
-    "KOI8U"  => KOI8_U_INFO,
-    "KOI8RU" => KOI8_RU_INFO,
+    "KOI8R"  => EncodingID::KOI8_R,
+    "KOI8U"  => EncodingID::KOI8_U,
+    "KOI8RU" => EncodingID::KOI8_RU,
 
     # Mac encodings
-    "MACROMAN"          => MAC_ROMAN_INFO,
-    "MACINTOSH"         => MAC_ROMAN_INFO,
-    "MAC"               => MAC_ROMAN_INFO,
-    "MACCENTRALEUROPE"  => MAC_CENTRAL_EUROPE_INFO,
-    "MACICELAND"        => MAC_ICELAND_INFO,
-    "MACCROATIAN"       => MAC_CROATIAN_INFO,
-    "MACROMANIA"        => MAC_ROMANIA_INFO,
-    "MACCYRILLIC"       => MAC_CYRILLIC_INFO,
-    "MACUKRAINE"        => MAC_UKRAINE_INFO,
-    "MACGREEK"          => MAC_GREEK_INFO,
-    "MACTURKISH"        => MAC_TURKISH_INFO,
-    "MACHEBREW"         => MAC_HEBREW_INFO,
-    "MACARABIC"         => MAC_ARABIC_INFO,
-    "MACTHAI"           => MAC_THAI_INFO,
+    "MACROMAN"          => EncodingID::MAC_ROMAN,
+    "MACINTOSH"         => EncodingID::MAC_ROMAN,
+    "MAC"               => EncodingID::MAC_ROMAN,
+    "MACCENTRALEUROPE"  => EncodingID::MAC_CENTRAL_EUROPE,
+    "MACICELAND"        => EncodingID::MAC_ICELAND,
+    "MACCROATIAN"       => EncodingID::MAC_CROATIAN,
+    "MACROMANIA"        => EncodingID::MAC_ROMANIA,
+    "MACCYRILLIC"       => EncodingID::MAC_CYRILLIC,
+    "MACUKRAINE"        => EncodingID::MAC_UKRAINE,
+    "MACGREEK"          => EncodingID::MAC_GREEK,
+    "MACTURKISH"        => EncodingID::MAC_TURKISH,
+    "MACHEBREW"         => EncodingID::MAC_HEBREW,
+    "MACARABIC"         => EncodingID::MAC_ARABIC,
+    "MACTHAI"           => EncodingID::MAC_THAI,
 
     # DOS code pages
-    "CP437"  => CP437_INFO,
-    "IBM437" => CP437_INFO,
-    "437"    => CP437_INFO,
+    "CP437"  => EncodingID::CP437,
+    "IBM437" => EncodingID::CP437,
+    "437"    => EncodingID::CP437,
 
-    "CP737" => CP737_INFO,
+    "CP737" => EncodingID::CP737,
 
-    "CP775"  => CP775_INFO,
-    "IBM775" => CP775_INFO,
+    "CP775"  => EncodingID::CP775,
+    "IBM775" => EncodingID::CP775,
 
-    "CP850"  => CP850_INFO,
-    "IBM850" => CP850_INFO,
-    "850"    => CP850_INFO,
+    "CP850"  => EncodingID::CP850,
+    "IBM850" => EncodingID::CP850,
+    "850"    => EncodingID::CP850,
 
-    "CP852"  => CP852_INFO,
-    "IBM852" => CP852_INFO,
-    "852"    => CP852_INFO,
+    "CP852"  => EncodingID::CP852,
+    "IBM852" => EncodingID::CP852,
+    "852"    => EncodingID::CP852,
 
-    "CP855"  => CP855_INFO,
-    "IBM855" => CP855_INFO,
-    "855"    => CP855_INFO,
+    "CP855"  => EncodingID::CP855,
+    "IBM855" => EncodingID::CP855,
+    "855"    => EncodingID::CP855,
 
-    "CP857"  => CP857_INFO,
-    "IBM857" => CP857_INFO,
-    "857"    => CP857_INFO,
+    "CP857"  => EncodingID::CP857,
+    "IBM857" => EncodingID::CP857,
+    "857"    => EncodingID::CP857,
 
-    "CP858" => CP858_INFO,
+    "CP858" => EncodingID::CP858,
 
-    "CP860"  => CP860_INFO,
-    "IBM860" => CP860_INFO,
-    "860"    => CP860_INFO,
+    "CP860"  => EncodingID::CP860,
+    "IBM860" => EncodingID::CP860,
+    "860"    => EncodingID::CP860,
 
-    "CP861"  => CP861_INFO,
-    "IBM861" => CP861_INFO,
-    "861"    => CP861_INFO,
-    "CPIS"   => CP861_INFO,
+    "CP861"  => EncodingID::CP861,
+    "IBM861" => EncodingID::CP861,
+    "861"    => EncodingID::CP861,
+    "CPIS"   => EncodingID::CP861,
 
-    "CP862"  => CP862_INFO,
-    "IBM862" => CP862_INFO,
-    "862"    => CP862_INFO,
+    "CP862"  => EncodingID::CP862,
+    "IBM862" => EncodingID::CP862,
+    "862"    => EncodingID::CP862,
 
-    "CP863"  => CP863_INFO,
-    "IBM863" => CP863_INFO,
-    "863"    => CP863_INFO,
+    "CP863"  => EncodingID::CP863,
+    "IBM863" => EncodingID::CP863,
+    "863"    => EncodingID::CP863,
 
-    "CP864"  => CP864_INFO,
-    "IBM864" => CP864_INFO,
+    "CP864"  => EncodingID::CP864,
+    "IBM864" => EncodingID::CP864,
 
-    "CP865"  => CP865_INFO,
-    "IBM865" => CP865_INFO,
-    "865"    => CP865_INFO,
+    "CP865"  => EncodingID::CP865,
+    "IBM865" => EncodingID::CP865,
+    "865"    => EncodingID::CP865,
 
-    "CP866"  => CP866_INFO,
-    "IBM866" => CP866_INFO,
-    "866"    => CP866_INFO,
+    "CP866"  => EncodingID::CP866,
+    "IBM866" => EncodingID::CP866,
+    "866"    => EncodingID::CP866,
 
-    "CP869"  => CP869_INFO,
-    "IBM869" => CP869_INFO,
-    "869"    => CP869_INFO,
-    "CPGR"   => CP869_INFO,
+    "CP869"  => EncodingID::CP869,
+    "IBM869" => EncodingID::CP869,
+    "869"    => EncodingID::CP869,
+    "CPGR"   => EncodingID::CP869,
 
     # Other single-byte
-    "CP874"      => CP874_INFO,
-    "WINDOWS874" => CP874_INFO,
+    "CP874"      => EncodingID::CP874,
+    "WINDOWS874" => EncodingID::CP874,
 
-    "TIS620"       => TIS_620_INFO,
-    "TIS6200"      => TIS_620_INFO,
-    "TIS62025291"  => TIS_620_INFO,
-    "TIS62025330"  => TIS_620_INFO,
-    "TIS62025331"  => TIS_620_INFO,
-    "ISOIR166"     => TIS_620_INFO,
+    "TIS620"       => EncodingID::TIS_620,
+    "TIS6200"      => EncodingID::TIS_620,
+    "TIS62025291"  => EncodingID::TIS_620,
+    "TIS62025330"  => EncodingID::TIS_620,
+    "TIS62025331"  => EncodingID::TIS_620,
+    "ISOIR166"     => EncodingID::TIS_620,
 
-    "VISCII"    => VISCII_INFO,
-    "VISCII111" => VISCII_INFO,
+    "VISCII"    => EncodingID::VISCII,
+    "VISCII111" => EncodingID::VISCII,
 
-    "ARMSCII8" => ARMSCII_8_INFO,
+    "ARMSCII8" => EncodingID::ARMSCII_8,
 
-    "GEORGIANACADEMY" => GEORGIAN_ACADEMY_INFO,
-    "GEORGIANPS"      => GEORGIAN_PS_INFO,
+    "GEORGIANACADEMY" => EncodingID::GEORGIAN_ACADEMY,
+    "GEORGIANPS"      => EncodingID::GEORGIAN_PS,
 
-    "HPROMAN8" => HP_ROMAN8_INFO,
-    "ROMAN8"   => HP_ROMAN8_INFO,
-    "R8"       => HP_ROMAN8_INFO,
+    "HPROMAN8" => EncodingID::HP_ROMAN8,
+    "ROMAN8"   => EncodingID::HP_ROMAN8,
+    "R8"       => EncodingID::HP_ROMAN8,
 
-    "NEXTSTEP" => NEXTSTEP_INFO,
+    "NEXTSTEP" => EncodingID::NEXTSTEP,
 
-    "PT154"    => PT154_INFO,
-    "CP154"    => PT154_INFO,
-    "PTCP154"  => PT154_INFO,
+    "PT154"    => EncodingID::PT154,
+    "CP154"    => EncodingID::PT154,
+    "PTCP154"  => EncodingID::PT154,
 
-    "KOI8T" => KOI8_T_INFO,
+    "KOI8T" => EncodingID::KOI8_T,
 
-    # Phase 3: Unicode family encodings
-    "UTF16BE" => UTF16_BE_INFO,
-    "UTF16LE" => UTF16_LE_INFO,
-    "UTF16"   => UTF16_INFO,
+    # Unicode family
+    "UTF16BE" => EncodingID::UTF16_BE,
+    "UTF16LE" => EncodingID::UTF16_LE,
+    "UTF16"   => EncodingID::UTF16,
 
-    "UTF32BE" => UTF32_BE_INFO,
-    "UTF32LE" => UTF32_LE_INFO,
-    "UTF32"   => UTF32_INFO,
+    "UTF32BE" => EncodingID::UTF32_BE,
+    "UTF32LE" => EncodingID::UTF32_LE,
+    "UTF32"   => EncodingID::UTF32,
 
-    "UCS2"          => UCS2_INFO,
-    "ISO10646UCS2"  => UCS2_INFO,
-    "CSUNICODE"     => UCS2_INFO,
-    "UCS2BE"        => UCS2_BE_INFO,
-    "UNICODE11"     => UCS2_BE_INFO,
-    "UNICODEBIG"    => UCS2_BE_INFO,
-    "CSUNICODE11"   => UCS2_BE_INFO,
-    "UCS2LE"        => UCS2_LE_INFO,
-    "UNICODELITTLE"  => UCS2_LE_INFO,
-    "UCS2INTERNAL"  => UCS2_INTERNAL_INFO,
-    "UCS2SWAPPED"   => UCS2_SWAPPED_INFO,
+    "UCS2"          => EncodingID::UCS2,
+    "ISO10646UCS2"  => EncodingID::UCS2,
+    "CSUNICODE"     => EncodingID::UCS2,
+    "UCS2BE"        => EncodingID::UCS2_BE,
+    "UNICODE11"     => EncodingID::UCS2_BE,
+    "UNICODEBIG"    => EncodingID::UCS2_BE,
+    "CSUNICODE11"   => EncodingID::UCS2_BE,
+    "UCS2LE"        => EncodingID::UCS2_LE,
+    "UNICODELITTLE" => EncodingID::UCS2_LE,
+    "UCS2INTERNAL"  => EncodingID::UCS2_INTERNAL,
+    "UCS2SWAPPED"   => EncodingID::UCS2_SWAPPED,
 
-    "UCS4"          => UCS4_INFO,
-    "ISO10646UCS4"  => UCS4_INFO,
-    "CSUCS4"        => UCS4_INFO,
-    "UCS4BE"        => UCS4_BE_INFO,
-    "UCS4LE"        => UCS4_LE_INFO,
-    "UCS4INTERNAL"  => UCS4_INTERNAL_INFO,
-    "UCS4SWAPPED"   => UCS4_SWAPPED_INFO,
+    "UCS4"          => EncodingID::UCS4,
+    "ISO10646UCS4"  => EncodingID::UCS4,
+    "CSUCS4"        => EncodingID::UCS4,
+    "UCS4BE"        => EncodingID::UCS4_BE,
+    "UCS4LE"        => EncodingID::UCS4_LE,
+    "UCS4INTERNAL"  => EncodingID::UCS4_INTERNAL,
+    "UCS4SWAPPED"   => EncodingID::UCS4_SWAPPED,
 
-    "UTF7"            => UTF7_INFO,
-    "UNICODE11UTF7"   => UTF7_INFO,
-    "CSUNICODE11UTF7" => UTF7_INFO,
+    "UTF7"            => EncodingID::UTF7,
+    "UNICODE11UTF7"   => EncodingID::UTF7,
+    "CSUNICODE11UTF7" => EncodingID::UTF7,
 
-    "C99"  => C99_INFO,
-    "JAVA" => JAVA_INFO,
+    "C99"  => EncodingID::C99,
+    "JAVA" => EncodingID::JAVA,
 
-    # Phase 5: EBCDIC encodings
-    "CP037"       => CP037_INFO,
-    "IBM037"      => CP037_INFO,
-    "EBCDICCP037" => CP037_INFO,
+    # EBCDIC
+    "CP037"       => EncodingID::CP037,
+    "IBM037"      => EncodingID::CP037,
+    "EBCDICCP037" => EncodingID::CP037,
 
-    "CP273"  => CP273_INFO,
-    "IBM273" => CP273_INFO,
+    "CP273"  => EncodingID::CP273,
+    "IBM273" => EncodingID::CP273,
 
-    "CP277"  => CP277_INFO,
-    "IBM277" => CP277_INFO,
+    "CP277"  => EncodingID::CP277,
+    "IBM277" => EncodingID::CP277,
 
-    "CP278"  => CP278_INFO,
-    "IBM278" => CP278_INFO,
+    "CP278"  => EncodingID::CP278,
+    "IBM278" => EncodingID::CP278,
 
-    "CP280"  => CP280_INFO,
-    "IBM280" => CP280_INFO,
+    "CP280"  => EncodingID::CP280,
+    "IBM280" => EncodingID::CP280,
 
-    "CP284"  => CP284_INFO,
-    "IBM284" => CP284_INFO,
+    "CP284"  => EncodingID::CP284,
+    "IBM284" => EncodingID::CP284,
 
-    "CP285"  => CP285_INFO,
-    "IBM285" => CP285_INFO,
+    "CP285"  => EncodingID::CP285,
+    "IBM285" => EncodingID::CP285,
 
-    "CP297"  => CP297_INFO,
-    "IBM297" => CP297_INFO,
+    "CP297"  => EncodingID::CP297,
+    "IBM297" => EncodingID::CP297,
 
-    "CP423"  => CP423_INFO,
-    "IBM423" => CP423_INFO,
+    "CP423"  => EncodingID::CP423,
+    "IBM423" => EncodingID::CP423,
 
-    "CP424"  => CP424_INFO,
-    "IBM424" => CP424_INFO,
+    "CP424"  => EncodingID::CP424,
+    "IBM424" => EncodingID::CP424,
 
-    "CP500"       => CP500_INFO,
-    "IBM500"      => CP500_INFO,
-    "EBCDICCP500" => CP500_INFO,
+    "CP500"       => EncodingID::CP500,
+    "IBM500"      => EncodingID::CP500,
+    "EBCDICCP500" => EncodingID::CP500,
 
-    "CP905"  => CP905_INFO,
-    "IBM905" => CP905_INFO,
+    "CP905"  => EncodingID::CP905,
+    "IBM905" => EncodingID::CP905,
 
-    "CP1026"  => CP1026_INFO,
-    "IBM1026" => CP1026_INFO,
+    "CP1026"  => EncodingID::CP1026,
+    "IBM1026" => EncodingID::CP1026,
 
-    # Phase 5: ASCII-superset single-byte
-    "CP856"  => CP856_INFO,
-    "IBM856" => CP856_INFO,
+    # Remaining ASCII-superset single-byte
+    "CP856"  => EncodingID::CP856,
+    "IBM856" => EncodingID::CP856,
 
-    "CP922"  => CP922_INFO,
-    "IBM922" => CP922_INFO,
+    "CP922"  => EncodingID::CP922,
+    "IBM922" => EncodingID::CP922,
 
-    "CP853"  => CP853_INFO,
+    "CP853"  => EncodingID::CP853,
 
-    "CP1046" => CP1046_INFO,
+    "CP1046" => EncodingID::CP1046,
 
-    "CP1124" => CP1124_INFO,
+    "CP1124" => EncodingID::CP1124,
 
-    "CP1125" => CP1125_INFO,
+    "CP1125" => EncodingID::CP1125,
 
-    "CP1129" => CP1129_INFO,
+    "CP1129" => EncodingID::CP1129,
 
-    "CP1131" => CP1131_INFO,
+    "CP1131" => EncodingID::CP1131,
 
-    "CP1133" => CP1133_INFO,
+    "CP1133" => EncodingID::CP1133,
 
-    "CP1161" => CP1161_INFO,
+    "CP1161" => EncodingID::CP1161,
 
-    "CP1162" => CP1162_INFO,
+    "CP1162" => EncodingID::CP1162,
 
-    "CP1163" => CP1163_INFO,
+    "CP1163" => EncodingID::CP1163,
 
-    "ATARIST" => ATARIST_INFO,
+    "ATARIST" => EncodingID::ATARIST,
 
-    "KZ1048"       => KZ_1048_INFO,
-    "STRK10482002" => KZ_1048_INFO,
-    "RK1048"       => KZ_1048_INFO,
+    "KZ1048"       => EncodingID::KZ_1048,
+    "STRK10482002" => EncodingID::KZ_1048,
+    "RK1048"       => EncodingID::KZ_1048,
 
-    "MULELAO1" => MULELAO_1_INFO,
+    "MULELAO1" => EncodingID::MULELAO_1,
 
-    "RISCOSLATIN1" => RISCOS_LATIN1_INFO,
+    "RISCOSLATIN1" => EncodingID::RISCOS_LATIN1,
 
-    # Phase 5: Non-ASCII non-EBCDIC
-    "TCVN"      => TCVN_INFO,
-    "TCVN5712"  => TCVN_INFO,
-    "TCVN57121" => TCVN_INFO,
+    # Non-ASCII non-EBCDIC
+    "TCVN"      => EncodingID::TCVN,
+    "TCVN5712"  => EncodingID::TCVN,
+    "TCVN57121" => EncodingID::TCVN,
 
-    # Phase 4: CJK encodings — Japanese
-    "EUCJP"                                => EUC_JP_INFO,
-    "EXTENDEDUNIXCODEPACKEDFORMATFORJAPANESE" => EUC_JP_INFO,
-    "CSEUCPKDFMTJAPANESE"                  => EUC_JP_INFO,
+    # CJK — Japanese
+    "EUCJP"                                  => EncodingID::EUC_JP,
+    "EXTENDEDUNIXCODEPACKEDFORMATFORJAPANESE" => EncodingID::EUC_JP,
+    "CSEUCPKDFMTJAPANESE"                    => EncodingID::EUC_JP,
 
-    "SHIFTJIS"     => SHIFT_JIS_INFO,
-    "SJIS"         => SHIFT_JIS_INFO,
-    "MSKANJI"      => SHIFT_JIS_INFO,
-    "CSSHIFTJIS"   => SHIFT_JIS_INFO,
+    "SHIFTJIS"     => EncodingID::SHIFT_JIS,
+    "SJIS"         => EncodingID::SHIFT_JIS,
+    "MSKANJI"      => EncodingID::SHIFT_JIS,
+    "CSSHIFTJIS"   => EncodingID::SHIFT_JIS,
 
-    "CP932"        => CP932_INFO,
-    "WINDOWS31J"   => CP932_INFO,
+    "CP932"        => EncodingID::CP932,
+    "WINDOWS31J"   => EncodingID::CP932,
 
-    "ISO2022JP"    => ISO2022_JP_INFO,
-    "CSISO2022JP"  => ISO2022_JP_INFO,
-    "ISO2022JP1"   => ISO2022_JP1_INFO,
-    "ISO2022JP2"   => ISO2022_JP2_INFO,
-    "CSISO2022JP2" => ISO2022_JP2_INFO,
+    "ISO2022JP"    => EncodingID::ISO2022_JP,
+    "CSISO2022JP"  => EncodingID::ISO2022_JP,
+    "ISO2022JP1"   => EncodingID::ISO2022_JP1,
+    "ISO2022JP2"   => EncodingID::ISO2022_JP2,
+    "CSISO2022JP2" => EncodingID::ISO2022_JP2,
 
-    # Phase 4: CJK encodings — Chinese (Simplified)
-    "GB2312"       => GB2312_INFO,
-    "CSGB2312"     => GB2312_INFO,
-    "GB231280"     => GB2312_INFO,
-    "CHINESE"      => GB2312_INFO,
-    "ISOIR58"      => GB2312_INFO,
-    "CSISO58GB231280" => GB2312_INFO,
+    # CJK — Chinese (Simplified)
+    "GB2312"          => EncodingID::GB2312,
+    "CSGB2312"        => EncodingID::GB2312,
+    "GB231280"        => EncodingID::GB2312,
+    "CHINESE"         => EncodingID::GB2312,
+    "ISOIR58"         => EncodingID::GB2312,
+    "CSISO58GB231280" => EncodingID::GB2312,
 
-    "GBK"          => GBK_INFO,
-    "CP936"        => GBK_INFO,
-    "MS936"        => GBK_INFO,
-    "WINDOWS936"   => GBK_INFO,
+    "GBK"          => EncodingID::GBK,
+    "CP936"        => EncodingID::GBK,
+    "MS936"        => EncodingID::GBK,
+    "WINDOWS936"   => EncodingID::GBK,
 
-    "GB18030"      => GB18030_INFO,
+    "GB18030"      => EncodingID::GB18030,
 
-    "EUCCN"        => EUC_CN_INFO,
-    "CNGB"         => EUC_CN_INFO,
+    "EUCCN"        => EncodingID::EUC_CN,
+    "CNGB"         => EncodingID::EUC_CN,
 
-    "HZ"           => HZ_INFO,
-    "HZGB2312"     => HZ_INFO,
+    "HZ"           => EncodingID::HZ,
+    "HZGB2312"     => EncodingID::HZ,
 
-    "ISO2022CN"    => ISO2022_CN_INFO,
-    "CSISO2022CN"  => ISO2022_CN_INFO,
-    "ISO2022CNEXT" => ISO2022_CN_EXT_INFO,
+    "ISO2022CN"    => EncodingID::ISO2022_CN,
+    "CSISO2022CN"  => EncodingID::ISO2022_CN,
+    "ISO2022CNEXT" => EncodingID::ISO2022_CN_EXT,
 
-    # Phase 4: CJK encodings — Chinese (Traditional)
-    "BIG5"         => BIG5_INFO,
-    "BIGFIVE"      => BIG5_INFO,
-    "CNBIG5"       => BIG5_INFO,
-    "CSBIG5"       => BIG5_INFO,
+    # CJK — Chinese (Traditional)
+    "BIG5"         => EncodingID::BIG5,
+    "BIGFIVE"      => EncodingID::BIG5,
+    "CNBIG5"       => EncodingID::BIG5,
+    "CSBIG5"       => EncodingID::BIG5,
 
-    "CP950"        => CP950_INFO,
-    "WINDOWS950"   => CP950_INFO,
+    "CP950"        => EncodingID::CP950,
+    "WINDOWS950"   => EncodingID::CP950,
 
-    "BIG5HKSCS"    => BIG5_HKSCS_INFO,
+    "BIG5HKSCS"    => EncodingID::BIG5_HKSCS,
 
-    "EUCTW"        => EUC_TW_INFO,
-    "CSEUCTW"      => EUC_TW_INFO,
+    "EUCTW"        => EncodingID::EUC_TW,
+    "CSEUCTW"      => EncodingID::EUC_TW,
 
-    # Phase 4: CJK encodings — Korean
-    "EUCKR"        => EUC_KR_INFO,
-    "CSEUCKR"      => EUC_KR_INFO,
+    # CJK — Korean
+    "EUCKR"        => EncodingID::EUC_KR,
+    "CSEUCKR"      => EncodingID::EUC_KR,
 
-    "CP949"        => CP949_INFO,
-    "UHC"          => CP949_INFO,
+    "CP949"        => EncodingID::CP949,
+    "UHC"          => EncodingID::CP949,
 
-    "ISO2022KR"    => ISO2022_KR_INFO,
-    "CSISO2022KR"  => ISO2022_KR_INFO,
+    "ISO2022KR"    => EncodingID::ISO2022_KR,
+    "CSISO2022KR"  => EncodingID::ISO2022_KR,
 
-    "JOHAB"        => JOHAB_INFO,
-    "CP1361"       => JOHAB_INFO,
+    "JOHAB"        => EncodingID::JOHAB,
+    "CP1361"       => EncodingID::JOHAB,
   }
 
   CANONICAL_NAMES = [
@@ -554,19 +562,19 @@ module CharConv::Registry
     "CP860", "CP861", "CP862", "CP863", "CP864", "CP865", "CP866", "CP869",
     "CP874", "TIS-620", "VISCII", "ARMSCII-8",
     "Georgian-Academy", "Georgian-PS", "HP-Roman8", "NEXTSTEP", "PT154", "KOI8-T",
-    # Phase 3: Unicode family
+    # Unicode family
     "UTF-16BE", "UTF-16LE", "UTF-16",
     "UTF-32BE", "UTF-32LE", "UTF-32",
     "UCS-2", "UCS-2BE", "UCS-2LE", "UCS-2-INTERNAL", "UCS-2-SWAPPED",
     "UCS-4", "UCS-4BE", "UCS-4LE", "UCS-4-INTERNAL", "UCS-4-SWAPPED",
     "UTF-7", "C99", "JAVA",
-    # Phase 5: Remaining single-byte
+    # Remaining single-byte
     "CP037", "CP273", "CP277", "CP278", "CP280", "CP284", "CP285", "CP297",
     "CP423", "CP424", "CP500", "CP905", "CP1026",
     "CP856", "CP922", "CP853", "CP1046", "CP1124", "CP1125", "CP1129", "CP1131",
     "CP1133", "CP1161", "CP1162", "CP1163", "ATARIST", "KZ-1048", "MULELAO-1",
     "RISCOS-LATIN1", "TCVN",
-    # Phase 4: CJK
+    # CJK
     "EUC-JP", "Shift_JIS", "CP932",
     "ISO-2022-JP", "ISO-2022-JP-1", "ISO-2022-JP-2",
     "GB2312", "GBK", "GB18030", "EUC-CN", "HZ",
@@ -592,7 +600,9 @@ module CharConv::Registry
       clean = clean[0...idx]
     end
     normalized = normalize(clean)
-    ENCODINGS[normalized]?
+    if id = ALIASES[normalized]?
+      ENCODING_INFO[id.value]
+    end
   end
 
   def self.parse_flags(name : String) : ConversionFlags
