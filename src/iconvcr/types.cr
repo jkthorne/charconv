@@ -126,6 +126,40 @@ module Iconvcr
     UTF7
     C99
     JAVA
+    # Phase 5: Remaining single-byte encodings
+    # EBCDIC (NOT ASCII supersets)
+    CP037
+    CP273
+    CP277
+    CP278
+    CP280
+    CP284
+    CP285
+    CP297
+    CP423
+    CP424
+    CP500
+    CP905
+    CP1026
+    # ASCII-superset single-byte
+    CP856
+    CP922
+    CP853
+    CP1046
+    CP1124
+    CP1125
+    CP1129
+    CP1131
+    CP1133
+    CP1161
+    CP1162
+    CP1163
+    ATARIST
+    KZ_1048
+    MULELAO_1
+    RISCOS_LATIN1
+    # Non-ASCII non-EBCDIC
+    TCVN
   end
 
   struct EncodingInfo
