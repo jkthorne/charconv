@@ -82,6 +82,13 @@ module Iconvcr::Registry
     "USASCII"     => ASCII_INFO,
     "ANSIX341968" => ASCII_INFO,
     "ISO646US"    => ASCII_INFO,
+    "646"         => ASCII_INFO,
+    "CHAR"        => ASCII_INFO,
+    "CSASCII"     => ASCII_INFO,
+    "ISOIR6"      => ASCII_INFO,
+    "ISO6461991"  => ASCII_INFO,
+    "IBM367"      => ASCII_INFO,
+    "CP367"       => ASCII_INFO,
 
     # UTF-8
     "UTF8" => UTF8_INFO,
@@ -92,38 +99,49 @@ module Iconvcr::Registry
     "ISO885911987"  => ISO_8859_1_INFO,
     "CP819"        => ISO_8859_1_INFO,
     "IBM819"       => ISO_8859_1_INFO,
+    "ISOIR100"     => ISO_8859_1_INFO,
+    "L1"           => ISO_8859_1_INFO,
+    "CSISOLATIN1"  => ISO_8859_1_INFO,
 
     # ISO-8859-2
     "ISO88592"     => ISO_8859_2_INFO,
     "LATIN2"       => ISO_8859_2_INFO,
     "ISO885921987" => ISO_8859_2_INFO,
     "ISOIR101"     => ISO_8859_2_INFO,
+    "L2"           => ISO_8859_2_INFO,
+    "CSISOLATIN2"  => ISO_8859_2_INFO,
 
     # ISO-8859-3
     "ISO88593"     => ISO_8859_3_INFO,
     "LATIN3"       => ISO_8859_3_INFO,
     "ISO885931988" => ISO_8859_3_INFO,
     "ISOIR109"     => ISO_8859_3_INFO,
+    "L3"           => ISO_8859_3_INFO,
+    "CSISOLATIN3"  => ISO_8859_3_INFO,
 
     # ISO-8859-4
     "ISO88594"     => ISO_8859_4_INFO,
     "LATIN4"       => ISO_8859_4_INFO,
     "ISO885941988" => ISO_8859_4_INFO,
     "ISOIR110"     => ISO_8859_4_INFO,
+    "L4"           => ISO_8859_4_INFO,
+    "CSISOLATIN4"  => ISO_8859_4_INFO,
 
     # ISO-8859-5
-    "ISO88595"     => ISO_8859_5_INFO,
-    "CYRILLIC"     => ISO_8859_5_INFO,
-    "ISO885951988" => ISO_8859_5_INFO,
-    "ISOIR144"     => ISO_8859_5_INFO,
+    "ISO88595"           => ISO_8859_5_INFO,
+    "CYRILLIC"           => ISO_8859_5_INFO,
+    "ISO885951988"       => ISO_8859_5_INFO,
+    "ISOIR144"           => ISO_8859_5_INFO,
+    "CSISOLATINCYRILLIC" => ISO_8859_5_INFO,
 
     # ISO-8859-6
-    "ISO88596"     => ISO_8859_6_INFO,
-    "ARABIC"       => ISO_8859_6_INFO,
-    "ISO885961987" => ISO_8859_6_INFO,
-    "ISOIR127"     => ISO_8859_6_INFO,
-    "ASMO708"      => ISO_8859_6_INFO,
-    "ECMA114"      => ISO_8859_6_INFO,
+    "ISO88596"           => ISO_8859_6_INFO,
+    "ARABIC"             => ISO_8859_6_INFO,
+    "ISO885961987"       => ISO_8859_6_INFO,
+    "ISOIR127"           => ISO_8859_6_INFO,
+    "ASMO708"            => ISO_8859_6_INFO,
+    "ECMA114"            => ISO_8859_6_INFO,
+    "CSISOLATINARABIC"   => ISO_8859_6_INFO,
 
     # ISO-8859-7
     "ISO88597"     => ISO_8859_7_INFO,
@@ -146,6 +164,8 @@ module Iconvcr::Registry
     "LATIN5"       => ISO_8859_9_INFO,
     "ISO885991989" => ISO_8859_9_INFO,
     "ISOIR148"     => ISO_8859_9_INFO,
+    "L5"           => ISO_8859_9_INFO,
+    "CSISOLATIN5"  => ISO_8859_9_INFO,
 
     # ISO-8859-10
     "ISO885910"     => ISO_8859_10_INFO,
@@ -500,6 +520,7 @@ module Iconvcr::Registry
     "CSBIG5"       => BIG5_INFO,
 
     "CP950"        => CP950_INFO,
+    "WINDOWS950"   => CP950_INFO,
 
     "BIG5HKSCS"    => BIG5_HKSCS_INFO,
 
@@ -572,6 +593,16 @@ module Iconvcr::Registry
     end
     normalized = normalize(clean)
     ENCODINGS[normalized]?
+  end
+
+  def self.parse_flags(name : String) : ConversionFlags
+    flags = ConversionFlags::None
+    if idx = name.index("//")
+      suffix = name[idx..].upcase
+      flags |= ConversionFlags::Translit if suffix.includes?("TRANSLIT")
+      flags |= ConversionFlags::Ignore if suffix.includes?("IGNORE")
+    end
+    flags
   end
 
   def self.canonical_names : Array(String)
