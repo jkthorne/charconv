@@ -1,12 +1,14 @@
 class Iconvcr::Converter
   getter from : EncodingInfo
   getter to : EncodingInfo
+  getter flags : ConversionFlags
   @decode_table : Pointer(UInt16)
   @encode_table : Pointer(UInt8)
 
   def initialize(from_encoding : String, to_encoding : String)
     @from = Registry.lookup(from_encoding) || raise ArgumentError.new("Unknown encoding: #{from_encoding}")
     @to = Registry.lookup(to_encoding) || raise ArgumentError.new("Unknown encoding: #{to_encoding}")
+    @flags = Registry.parse_flags(to_encoding)
     @state_decode = CodecState.new
     @state_encode = CodecState.new
     @decode_table = Tables::DECODE_TABLES[@from.id.value]
@@ -335,6 +337,21 @@ class Iconvcr::Converter
     end
   end
 
+  # Try to transliterate a codepoint that can't be encoded directly.
+  # Returns number of bytes written to dst, or 0 on failure.
+  private def transliterate(cp : UInt32, dst : Bytes, dst_pos : Int32) : Int32
+    replacement = Transliteration.lookup(cp)
+    return 0 unless replacement
+    total = 0
+    replacement.each do |rcp|
+      break if rcp == 0
+      er = encode_one(rcp, dst, dst_pos + total)
+      return 0 if er.status <= 0 # any failure → whole transliteration fails
+      total += er.status
+    end
+    total
+  end
+
   # Fast path for conversions where both encodings are ASCII supersets.
   private def convert_ascii_fast(src : Bytes, dst : Bytes) : {Int32, Int32}
     src_pos = 0
@@ -354,16 +371,32 @@ class Iconvcr::Converter
       end
 
       dr = decode_one(src, src_pos)
-      if dr.status == -1
+      if dr.status == -1 # ILSEQ
+        if @flags.ignore?
+          src_pos += 1
+          next
+        end
         return {src_pos, dst_pos}
-      elsif dr.status == 0
+      elsif dr.status == 0 # TOOFEW
         return {src_pos, dst_pos}
       end
 
       er = encode_one(dr.codepoint, dst, dst_pos)
-      if er.status == -1
+      if er.status == -1 # ILUNI
+        if @flags.translit?
+          t = transliterate(dr.codepoint, dst, dst_pos)
+          if t > 0
+            src_pos += dr.status
+            dst_pos += t
+            next
+          end
+        end
+        if @flags.ignore?
+          src_pos += dr.status
+          next
+        end
         return {src_pos, dst_pos}
-      elsif er.status == 0
+      elsif er.status == 0 # TOOSMALL
         return {src_pos, dst_pos}
       end
 
@@ -389,9 +422,13 @@ class Iconvcr::Converter
 
     while src_pos < src.size
       dr = decode_one(src, src_pos)
-      if dr.status == -1
+      if dr.status == -1 # ILSEQ
+        if @flags.ignore?
+          src_pos += 1
+          next
+        end
         return {src_pos, dst_pos}
-      elsif dr.status == 0
+      elsif dr.status == 0 # TOOFEW
         return {src_pos, dst_pos}
       end
 
@@ -403,9 +440,21 @@ class Iconvcr::Converter
       end
 
       er = encode_one(dr.codepoint, dst, dst_pos)
-      if er.status == -1
+      if er.status == -1 # ILUNI
+        if @flags.translit?
+          t = transliterate(dr.codepoint, dst, dst_pos)
+          if t > 0
+            src_pos += dr.status
+            dst_pos += t
+            next
+          end
+        end
+        if @flags.ignore?
+          src_pos += dr.status
+          next
+        end
         return {src_pos, dst_pos}
-      elsif er.status == 0
+      elsif er.status == 0 # TOOSMALL
         return {src_pos, dst_pos}
       end
 
@@ -429,6 +478,8 @@ class Iconvcr::Converter
     max_out = input.size.to_i64 * @to.max_bytes_per_char
     # Cap at a reasonable size to avoid absurd allocations on empty input
     max_out = 16_i64 if max_out < 16
+    # Transliteration can expand 1 char → up to 4 chars
+    max_out = max_out * 4 if @flags.translit?
     # For BOM-detecting encodings, add space for BOM in output
     max_out += 4 if @to.id.utf16? || @to.id.utf32? || @to.id.ucs2? || @to.id.ucs4?
     # For stateful encodings, add space for escape sequences and flush
@@ -451,9 +502,12 @@ class Iconvcr::Converter
     end
 
     if src_consumed < input.size
-      raise Iconvcr::ConversionError.new(
-        "Conversion failed at byte #{src_consumed} (#{src_consumed}/#{input.size} bytes consumed)"
-      )
+      unless @flags.ignore?
+        raise Iconvcr::ConversionError.new(
+          "Conversion failed at byte #{src_consumed} (#{src_consumed}/#{input.size} bytes consumed)"
+        )
+      end
+      # With //IGNORE, trailing incomplete sequences are silently discarded
     end
     dst[0, dst_written]
   end

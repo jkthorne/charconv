@@ -20,6 +20,7 @@ require "./iconvcr/codecs/iso2022_cn"
 require "./iconvcr/codecs/iso2022_kr"
 require "./iconvcr/codecs/hz"
 require "./iconvcr/registry"
+require "./iconvcr/transliteration"
 require "./iconvcr/converter"
 
 module Iconvcr
