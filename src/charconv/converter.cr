@@ -17,84 +17,37 @@ class CharConv::Converter
   end
 
   private def init_codec_modes
-    # Decode side
-    case @from.id
-    when .utf16_be?, .ucs2_be?
-      @state_decode.mode = 1_u8 # BE
-    when .utf16_le?, .ucs2_le?
-      @state_decode.mode = 2_u8 # LE
-    when .utf32_be?, .ucs4_be?
-      @state_decode.mode = 1_u8
-    when .utf32_le?, .ucs4_le?
-      @state_decode.mode = 2_u8
-    when .ucs2_internal?, .ucs4_internal?
-      {% if flag?(:little_endian) %}
-        @state_decode.mode = 2_u8 # LE
-      {% else %}
-        @state_decode.mode = 1_u8 # BE
-      {% end %}
-    when .ucs2_swapped?, .ucs4_swapped?
-      {% if flag?(:little_endian) %}
-        @state_decode.mode = 1_u8 # BE (swapped from native LE)
-      {% else %}
-        @state_decode.mode = 2_u8 # LE (swapped from native BE)
-      {% end %}
-    when .utf16?, .utf32?, .ucs2?, .ucs4?
-      @state_decode.mode = 0_u8 # BOM detection needed
-    when .utf7?
-      @state_decode.mode = 1_u8 # direct mode
-    when .hz?
-      @state_decode.mode = 0_u8 # ASCII mode
-    when .iso2022_jp?, .iso2022_jp1?, .iso2022_jp2?
-      @state_decode.mode = 0_u8 # ASCII mode
-    when .iso2022_cn?, .iso2022_cn_ext?
-      @state_decode.mode = 0_u8 # ASCII mode
-      @state_decode.flags = 0_u8 # no G1 designation
-    when .iso2022_kr?
-      @state_decode.mode = 0_u8 # ASCII mode
-      @state_decode.flags = 0_u8 # no designation
-    else
-      @state_decode.mode = 1_u8 # default: no BOM detection
-    end
+    @state_decode.mode, @state_decode.flags = codec_mode_for(@from.id)
+    @state_encode.mode, @state_encode.flags = codec_mode_for(@to.id)
+  end
 
-    # Encode side
-    case @to.id
-    when .utf16_be?, .ucs2_be?
-      @state_encode.mode = 1_u8
-    when .utf16_le?, .ucs2_le?
-      @state_encode.mode = 2_u8
-    when .utf32_be?, .ucs4_be?
-      @state_encode.mode = 1_u8
-    when .utf32_le?, .ucs4_le?
-      @state_encode.mode = 2_u8
+  private def codec_mode_for(id : EncodingID) : {UInt8, UInt8}
+    case id
+    when .utf16_be?, .ucs2_be?  then {1_u8, 0_u8}
+    when .utf16_le?, .ucs2_le?  then {2_u8, 0_u8}
+    when .utf32_be?, .ucs4_be?  then {1_u8, 0_u8}
+    when .utf32_le?, .ucs4_le?  then {2_u8, 0_u8}
     when .ucs2_internal?, .ucs4_internal?
       {% if flag?(:little_endian) %}
-        @state_encode.mode = 2_u8
+        {2_u8, 0_u8}
       {% else %}
-        @state_encode.mode = 1_u8
+        {1_u8, 0_u8}
       {% end %}
     when .ucs2_swapped?, .ucs4_swapped?
       {% if flag?(:little_endian) %}
-        @state_encode.mode = 1_u8
+        {1_u8, 0_u8} # BE (swapped from native LE)
       {% else %}
-        @state_encode.mode = 2_u8
+        {2_u8, 0_u8} # LE (swapped from native BE)
       {% end %}
     when .utf16?, .utf32?, .ucs2?, .ucs4?
-      @state_encode.mode = 0_u8 # will emit BOM
+      {0_u8, 0_u8} # BOM detection / will emit BOM
     when .utf7?
-      @state_encode.mode = 1_u8 # direct mode
-    when .hz?
-      @state_encode.mode = 0_u8 # ASCII mode
-    when .iso2022_jp?, .iso2022_jp1?, .iso2022_jp2?
-      @state_encode.mode = 0_u8 # ASCII mode
-    when .iso2022_cn?, .iso2022_cn_ext?
-      @state_encode.mode = 0_u8 # ASCII mode
-      @state_encode.flags = 0_u8
-    when .iso2022_kr?
-      @state_encode.mode = 0_u8 # ASCII mode
-      @state_encode.flags = 0_u8
+      {1_u8, 0_u8} # direct mode
+    when .hz?, .iso2022_jp?, .iso2022_jp1?, .iso2022_jp2?,
+         .iso2022_cn?, .iso2022_cn_ext?, .iso2022_kr?
+      {0_u8, 0_u8} # ASCII mode
     else
-      @state_encode.mode = 1_u8
+      {1_u8, 0_u8} # default
     end
   end
 
@@ -352,6 +305,32 @@ class CharConv::Converter
     total
   end
 
+  # Handle a decode error. Returns src bytes to skip (for IGNORE), or nil to stop.
+  private def handle_decode_error(status : Int32) : Int32?
+    if status == -1 # ILSEQ
+      return 1 if @flags.ignore?
+    end
+    nil # ILSEQ without IGNORE, or TOOFEW — stop
+  end
+
+  # Encode a codepoint with translit/ignore fallback.
+  # Returns {src_advance, dst_advance}, or nil to stop.
+  private def handle_encode(dr : DecodeResult, dst : Bytes, dst_pos : Int32) : {Int32, Int32}?
+    er = encode_one(dr.codepoint, dst, dst_pos)
+    if er.status == -1 # ILUNI
+      if @flags.translit?
+        t = transliterate(dr.codepoint, dst, dst_pos)
+        return {dr.status, t} if t > 0
+      end
+      return {dr.status, 0} if @flags.ignore?
+      nil
+    elsif er.status == 0 # TOOSMALL
+      nil
+    else
+      {dr.status, er.status}
+    end
+  end
+
   # Fast path for conversions where both encodings are ASCII supersets.
   private def convert_ascii_fast(src : Bytes, dst : Bytes) : {Int32, Int32}
     src_pos = 0
@@ -370,37 +349,21 @@ class CharConv::Converter
       end
 
       dr = decode_one(src, src_pos)
-      if dr.status == -1 # ILSEQ
-        if @flags.ignore?
-          src_pos += 1
+      if dr.status <= 0
+        skip = handle_decode_error(dr.status)
+        if skip
+          src_pos += skip
           next
         end
         return {src_pos, dst_pos}
-      elsif dr.status == 0 # TOOFEW
-        return {src_pos, dst_pos}
       end
 
-      er = encode_one(dr.codepoint, dst, dst_pos)
-      if er.status == -1 # ILUNI
-        if @flags.translit?
-          t = transliterate(dr.codepoint, dst, dst_pos)
-          if t > 0
-            src_pos += dr.status
-            dst_pos += t
-            next
-          end
-        end
-        if @flags.ignore?
-          src_pos += dr.status
-          next
-        end
-        return {src_pos, dst_pos}
-      elsif er.status == 0 # TOOSMALL
+      result = handle_encode(dr, dst, dst_pos)
+      unless result
         return {src_pos, dst_pos}
       end
-
-      src_pos += dr.status
-      dst_pos += er.status
+      src_pos += result[0]
+      dst_pos += result[1]
     end
 
     {src_pos, dst_pos}
@@ -421,13 +384,12 @@ class CharConv::Converter
 
     while src_pos < src.size
       dr = decode_one(src, src_pos)
-      if dr.status == -1 # ILSEQ
-        if @flags.ignore?
-          src_pos += 1
+      if dr.status <= 0
+        skip = handle_decode_error(dr.status)
+        if skip
+          src_pos += skip
           next
         end
-        return {src_pos, dst_pos}
-      elsif dr.status == 0 # TOOFEW
         return {src_pos, dst_pos}
       end
 
@@ -439,27 +401,12 @@ class CharConv::Converter
         next
       end
 
-      er = encode_one(dr.codepoint, dst, dst_pos)
-      if er.status == -1 # ILUNI
-        if @flags.translit?
-          t = transliterate(dr.codepoint, dst, dst_pos)
-          if t > 0
-            src_pos += dr.status
-            dst_pos += t
-            next
-          end
-        end
-        if @flags.ignore?
-          src_pos += dr.status
-          next
-        end
-        return {src_pos, dst_pos}
-      elsif er.status == 0 # TOOSMALL
+      result = handle_encode(dr, dst, dst_pos)
+      unless result
         return {src_pos, dst_pos}
       end
-
-      src_pos += dr.status
-      dst_pos += er.status
+      src_pos += result[0]
+      dst_pos += result[1]
     end
 
     {src_pos, dst_pos}
