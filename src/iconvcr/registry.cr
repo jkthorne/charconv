@@ -11,7 +11,9 @@ module Iconvcr::Registry
                   CP437 CP737 CP775 CP850 CP852 CP855 CP857 CP858 CP860 CP861 CP862 CP863
                   CP865 CP866 CP869
                   CP874 TIS_620 ARMSCII_8 GEORGIAN_ACADEMY GEORGIAN_PS HP_ROMAN8
-                  NEXTSTEP PT154 KOI8_T] %}
+                  NEXTSTEP PT154 KOI8_T
+                  CP856 CP922 CP853 CP1046 CP1124 CP1125 CP1129 CP1131
+                  CP1133 CP1161 CP1162 CP1163 ATARIST KZ_1048 MULELAO_1 RISCOS_LATIN1] %}
     private {{ id.upcase.id }}_INFO = EncodingInfo.new(EncodingID::{{ id.id }}, true, 1_u8, false)
   {% end %}
 
@@ -19,6 +21,12 @@ module Iconvcr::Registry
   {% for id in %w[MAC_ROMAN MAC_CENTRAL_EUROPE MAC_ICELAND MAC_CROATIAN MAC_ROMANIA
                   MAC_CYRILLIC MAC_UKRAINE MAC_GREEK MAC_TURKISH MAC_HEBREW MAC_ARABIC MAC_THAI
                   CP864 VISCII] %}
+    private {{ id.upcase.id }}_INFO = EncodingInfo.new(EncodingID::{{ id.id }}, false, 1_u8, false)
+  {% end %}
+
+  # EBCDIC encodings and TCVN are NOT ASCII supersets
+  {% for id in %w[CP037 CP273 CP277 CP278 CP280 CP284 CP285 CP297
+                  CP423 CP424 CP500 CP905 CP1026 TCVN] %}
     private {{ id.upcase.id }}_INFO = EncodingInfo.new(EncodingID::{{ id.id }}, false, 1_u8, false)
   {% end %}
 
@@ -331,6 +339,90 @@ module Iconvcr::Registry
 
     "C99"  => C99_INFO,
     "JAVA" => JAVA_INFO,
+
+    # Phase 5: EBCDIC encodings
+    "CP037"       => CP037_INFO,
+    "IBM037"      => CP037_INFO,
+    "EBCDICCP037" => CP037_INFO,
+
+    "CP273"  => CP273_INFO,
+    "IBM273" => CP273_INFO,
+
+    "CP277"  => CP277_INFO,
+    "IBM277" => CP277_INFO,
+
+    "CP278"  => CP278_INFO,
+    "IBM278" => CP278_INFO,
+
+    "CP280"  => CP280_INFO,
+    "IBM280" => CP280_INFO,
+
+    "CP284"  => CP284_INFO,
+    "IBM284" => CP284_INFO,
+
+    "CP285"  => CP285_INFO,
+    "IBM285" => CP285_INFO,
+
+    "CP297"  => CP297_INFO,
+    "IBM297" => CP297_INFO,
+
+    "CP423"  => CP423_INFO,
+    "IBM423" => CP423_INFO,
+
+    "CP424"  => CP424_INFO,
+    "IBM424" => CP424_INFO,
+
+    "CP500"       => CP500_INFO,
+    "IBM500"      => CP500_INFO,
+    "EBCDICCP500" => CP500_INFO,
+
+    "CP905"  => CP905_INFO,
+    "IBM905" => CP905_INFO,
+
+    "CP1026"  => CP1026_INFO,
+    "IBM1026" => CP1026_INFO,
+
+    # Phase 5: ASCII-superset single-byte
+    "CP856"  => CP856_INFO,
+    "IBM856" => CP856_INFO,
+
+    "CP922"  => CP922_INFO,
+    "IBM922" => CP922_INFO,
+
+    "CP853"  => CP853_INFO,
+
+    "CP1046" => CP1046_INFO,
+
+    "CP1124" => CP1124_INFO,
+
+    "CP1125" => CP1125_INFO,
+
+    "CP1129" => CP1129_INFO,
+
+    "CP1131" => CP1131_INFO,
+
+    "CP1133" => CP1133_INFO,
+
+    "CP1161" => CP1161_INFO,
+
+    "CP1162" => CP1162_INFO,
+
+    "CP1163" => CP1163_INFO,
+
+    "ATARIST" => ATARIST_INFO,
+
+    "KZ1048"       => KZ_1048_INFO,
+    "STRK10482002" => KZ_1048_INFO,
+    "RK1048"       => KZ_1048_INFO,
+
+    "MULELAO1" => MULELAO_1_INFO,
+
+    "RISCOSLATIN1" => RISCOS_LATIN1_INFO,
+
+    # Phase 5: Non-ASCII non-EBCDIC
+    "TCVN"      => TCVN_INFO,
+    "TCVN5712"  => TCVN_INFO,
+    "TCVN57121" => TCVN_INFO,
   }
 
   CANONICAL_NAMES = [
@@ -352,6 +444,12 @@ module Iconvcr::Registry
     "UCS-2", "UCS-2BE", "UCS-2LE", "UCS-2-INTERNAL", "UCS-2-SWAPPED",
     "UCS-4", "UCS-4BE", "UCS-4LE", "UCS-4-INTERNAL", "UCS-4-SWAPPED",
     "UTF-7", "C99", "JAVA",
+    # Phase 5: Remaining single-byte
+    "CP037", "CP273", "CP277", "CP278", "CP280", "CP284", "CP285", "CP297",
+    "CP423", "CP424", "CP500", "CP905", "CP1026",
+    "CP856", "CP922", "CP853", "CP1046", "CP1124", "CP1125", "CP1129", "CP1131",
+    "CP1133", "CP1161", "CP1162", "CP1163", "ATARIST", "KZ-1048", "MULELAO-1",
+    "RISCOS-LATIN1", "TCVN",
   ]
 
   def self.normalize(name : String) : String
