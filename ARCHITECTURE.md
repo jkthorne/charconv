@@ -1,4 +1,4 @@
-# iconvcr — Architecture (Performance-First)
+# charconv — Architecture (Performance-First)
 
 ## The Core Insight
 

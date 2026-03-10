@@ -1,4 +1,4 @@
-# iconvcr — Project Status
+# charconv — Project Status
 
 A pure Crystal clone of GNU libiconv. Converts text between 150+ character
 encodings using Unicode (UCS-4) as a pivot, with performance-first design.
@@ -16,7 +16,7 @@ encodings using Unicode (UCS-4) as a pivot, with performance-first design.
 
 ## Benchmarks
 
-| Operation              | iconvcr     | System iconv | Speedup |
+| Operation              | charconv     | System iconv | Speedup |
 |------------------------|-------------|-------------|---------|
 | ASCII → ASCII          | 12.25 GB/s  | 90 MB/s     | 136x    |
 | ISO-8859-1 → UTF-8    | 580 MB/s    | 72 MB/s     | 8.0x    |
@@ -65,7 +65,7 @@ encodings using Unicode (UCS-4) as a pivot, with performance-first design.
 - One-line fix: added `&& @from.stateful` guard
 
 ### Phase B: IO Streaming + Polish
-- `Converter#convert(IO, IO)` and `Iconvcr.convert(IO, IO, from, to)`
+- `Converter#convert(IO, IO)` and `CharConv.convert(IO, IO, from, to)`
 - README with full API docs, encoding list, architecture overview
 - Performance validation: all targets met or exceeded
 

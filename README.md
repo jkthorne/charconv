@@ -1,4 +1,4 @@
-# iconvcr
+# charconv
 
 A pure Crystal implementation of GNU libiconv. Converts text between 150+ character
 encodings using Unicode (UCS-4) as a pivot, with performance-first design.
@@ -19,8 +19,8 @@ Add to your `shard.yml`:
 
 ```yaml
 dependencies:
-  iconvcr:
-    github: jackthorne/iconvcr
+  charconv:
+    github: jackthorne/charconv
 ```
 
 ## Usage
@@ -28,21 +28,21 @@ dependencies:
 ### One-shot conversion
 
 ```crystal
-require "iconvcr"
+require "charconv"
 
 # String/Bytes → Bytes
-result = Iconvcr.convert("Hello, World!", "UTF-8", "ISO-8859-1")
-result = Iconvcr.convert(input_bytes, "Shift_JIS", "UTF-8")
+result = CharConv.convert("Hello, World!", "UTF-8", "ISO-8859-1")
+result = CharConv.convert(input_bytes, "Shift_JIS", "UTF-8")
 
 # With flags
-result = Iconvcr.convert(input, "UTF-8", "ASCII//TRANSLIT")   # transliterate
-result = Iconvcr.convert(input, "UTF-8", "ASCII//IGNORE")     # skip failures
+result = CharConv.convert(input, "UTF-8", "ASCII//TRANSLIT")   # transliterate
+result = CharConv.convert(input, "UTF-8", "ASCII//IGNORE")     # skip failures
 ```
 
 ### Streaming (buffer-based)
 
 ```crystal
-converter = Iconvcr::Converter.new("EUC-JP", "UTF-8")
+converter = CharConv::Converter.new("EUC-JP", "UTF-8")
 
 # You provide the buffers — zero allocations
 src_consumed, dst_written = converter.convert(input_bytes, output_bytes)
@@ -54,21 +54,21 @@ src_consumed, dst_written = converter.convert(input_bytes, output_bytes)
 ```crystal
 File.open("input.txt", "r") do |input|
   File.open("output.txt", "w") do |output|
-    Iconvcr.convert(input, output, "Shift_JIS", "UTF-8")
+    CharConv.convert(input, output, "Shift_JIS", "UTF-8")
   end
 end
 
 # Or with a Converter instance for more control
-converter = Iconvcr::Converter.new("GB18030", "UTF-8")
+converter = CharConv::Converter.new("GB18030", "UTF-8")
 converter.convert(input_io, output_io, buffer_size: 16384)
 ```
 
 ### Querying encodings
 
 ```crystal
-Iconvcr.encoding_supported?("UTF-8")       # => true
-Iconvcr.encoding_supported?("NONEXISTENT") # => false
-Iconvcr.list_encodings                      # => ["ASCII", "UTF-8", ...]
+CharConv.encoding_supported?("UTF-8")       # => true
+CharConv.encoding_supported?("NONEXISTENT") # => false
+CharConv.list_encodings                      # => ["ASCII", "UTF-8", ...]
 ```
 
 ## Supported Encodings
