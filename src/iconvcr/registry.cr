@@ -22,6 +22,27 @@ module Iconvcr::Registry
     private {{ id.upcase.id }}_INFO = EncodingInfo.new(EncodingID::{{ id.id }}, false, 1_u8, false)
   {% end %}
 
+  # Phase 3: Unicode family encodings (none are ASCII supersets)
+  private UTF16_BE_INFO  = EncodingInfo.new(EncodingID::UTF16_BE, false, 4_u8, false)
+  private UTF16_LE_INFO  = EncodingInfo.new(EncodingID::UTF16_LE, false, 4_u8, false)
+  private UTF16_INFO     = EncodingInfo.new(EncodingID::UTF16, false, 4_u8, true)
+  private UTF32_BE_INFO  = EncodingInfo.new(EncodingID::UTF32_BE, false, 4_u8, false)
+  private UTF32_LE_INFO  = EncodingInfo.new(EncodingID::UTF32_LE, false, 4_u8, false)
+  private UTF32_INFO     = EncodingInfo.new(EncodingID::UTF32, false, 4_u8, true)
+  private UCS2_INFO      = EncodingInfo.new(EncodingID::UCS2, false, 2_u8, true)
+  private UCS2_BE_INFO   = EncodingInfo.new(EncodingID::UCS2_BE, false, 2_u8, false)
+  private UCS2_LE_INFO   = EncodingInfo.new(EncodingID::UCS2_LE, false, 2_u8, false)
+  private UCS2_INTERNAL_INFO = EncodingInfo.new(EncodingID::UCS2_INTERNAL, false, 2_u8, false)
+  private UCS2_SWAPPED_INFO  = EncodingInfo.new(EncodingID::UCS2_SWAPPED, false, 2_u8, false)
+  private UCS4_INFO      = EncodingInfo.new(EncodingID::UCS4, false, 4_u8, true)
+  private UCS4_BE_INFO   = EncodingInfo.new(EncodingID::UCS4_BE, false, 4_u8, false)
+  private UCS4_LE_INFO   = EncodingInfo.new(EncodingID::UCS4_LE, false, 4_u8, false)
+  private UCS4_INTERNAL_INFO = EncodingInfo.new(EncodingID::UCS4_INTERNAL, false, 4_u8, false)
+  private UCS4_SWAPPED_INFO  = EncodingInfo.new(EncodingID::UCS4_SWAPPED, false, 4_u8, false)
+  private UTF7_INFO      = EncodingInfo.new(EncodingID::UTF7, false, 8_u8, true)
+  private C99_INFO       = EncodingInfo.new(EncodingID::C99, false, 10_u8, false)
+  private JAVA_INFO      = EncodingInfo.new(EncodingID::JAVA, false, 12_u8, false)
+
   ENCODINGS = {
     # ASCII
     "ASCII"       => ASCII_INFO,
@@ -274,6 +295,42 @@ module Iconvcr::Registry
     "PTCP154"  => PT154_INFO,
 
     "KOI8T" => KOI8_T_INFO,
+
+    # Phase 3: Unicode family encodings
+    "UTF16BE" => UTF16_BE_INFO,
+    "UTF16LE" => UTF16_LE_INFO,
+    "UTF16"   => UTF16_INFO,
+
+    "UTF32BE" => UTF32_BE_INFO,
+    "UTF32LE" => UTF32_LE_INFO,
+    "UTF32"   => UTF32_INFO,
+
+    "UCS2"          => UCS2_INFO,
+    "ISO10646UCS2"  => UCS2_INFO,
+    "CSUNICODE"     => UCS2_INFO,
+    "UCS2BE"        => UCS2_BE_INFO,
+    "UNICODE11"     => UCS2_BE_INFO,
+    "UNICODEBIG"    => UCS2_BE_INFO,
+    "CSUNICODE11"   => UCS2_BE_INFO,
+    "UCS2LE"        => UCS2_LE_INFO,
+    "UNICODELITTLE"  => UCS2_LE_INFO,
+    "UCS2INTERNAL"  => UCS2_INTERNAL_INFO,
+    "UCS2SWAPPED"   => UCS2_SWAPPED_INFO,
+
+    "UCS4"          => UCS4_INFO,
+    "ISO10646UCS4"  => UCS4_INFO,
+    "CSUCS4"        => UCS4_INFO,
+    "UCS4BE"        => UCS4_BE_INFO,
+    "UCS4LE"        => UCS4_LE_INFO,
+    "UCS4INTERNAL"  => UCS4_INTERNAL_INFO,
+    "UCS4SWAPPED"   => UCS4_SWAPPED_INFO,
+
+    "UTF7"            => UTF7_INFO,
+    "UNICODE11UTF7"   => UTF7_INFO,
+    "CSUNICODE11UTF7" => UTF7_INFO,
+
+    "C99"  => C99_INFO,
+    "JAVA" => JAVA_INFO,
   }
 
   CANONICAL_NAMES = [
@@ -289,6 +346,12 @@ module Iconvcr::Registry
     "CP860", "CP861", "CP862", "CP863", "CP864", "CP865", "CP866", "CP869",
     "CP874", "TIS-620", "VISCII", "ARMSCII-8",
     "Georgian-Academy", "Georgian-PS", "HP-Roman8", "NEXTSTEP", "PT154", "KOI8-T",
+    # Phase 3: Unicode family
+    "UTF-16BE", "UTF-16LE", "UTF-16",
+    "UTF-32BE", "UTF-32LE", "UTF-32",
+    "UCS-2", "UCS-2BE", "UCS-2LE", "UCS-2-INTERNAL", "UCS-2-SWAPPED",
+    "UCS-4", "UCS-4BE", "UCS-4LE", "UCS-4-INTERNAL", "UCS-4-SWAPPED",
+    "UTF-7", "C99", "JAVA",
   ]
 
   def self.normalize(name : String) : String

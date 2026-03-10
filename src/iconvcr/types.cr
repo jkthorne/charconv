@@ -106,6 +106,26 @@ module Iconvcr
     NEXTSTEP
     PT154
     KOI8_T
+    # Phase 3: Unicode family encodings
+    UTF16_BE
+    UTF16_LE
+    UTF16
+    UTF32_BE
+    UTF32_LE
+    UTF32
+    UCS2
+    UCS2_BE
+    UCS2_LE
+    UCS2_INTERNAL
+    UCS2_SWAPPED
+    UCS4
+    UCS4_BE
+    UCS4_LE
+    UCS4_INTERNAL
+    UCS4_SWAPPED
+    UTF7
+    C99
+    JAVA
   end
 
   struct EncodingInfo
