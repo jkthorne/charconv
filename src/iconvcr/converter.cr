@@ -1,12 +1,16 @@
 class Iconvcr::Converter
   getter from : EncodingInfo
   getter to : EncodingInfo
+  @decode_table : Pointer(UInt16)
+  @encode_table : Pointer(UInt8)
 
   def initialize(from_encoding : String, to_encoding : String)
     @from = Registry.lookup(from_encoding) || raise ArgumentError.new("Unknown encoding: #{from_encoding}")
     @to = Registry.lookup(to_encoding) || raise ArgumentError.new("Unknown encoding: #{to_encoding}")
     @state_decode = CodecState.new
     @state_encode = CodecState.new
+    @decode_table = Tables::DECODE_TABLES[@from.id.value]
+    @encode_table = Tables::ENCODE_TABLES[@to.id.value]
   end
 
   # Scans a run of ASCII bytes using 8-byte word reads.
@@ -37,18 +41,20 @@ class Iconvcr::Converter
   @[AlwaysInline]
   private def decode_one(src : Bytes, pos : Int32) : DecodeResult
     case @from.id
-    in EncodingID::ASCII      then Decode.ascii(src, pos)
-    in EncodingID::UTF8       then Decode.utf8(src, pos)
-    in EncodingID::ISO_8859_1 then Decode.iso_8859_1(src, pos)
+    when .ascii?      then Decode.ascii(src, pos)
+    when .utf8?       then Decode.utf8(src, pos)
+    when .iso_8859_1? then Decode.iso_8859_1(src, pos)
+    else Decode.single_byte_table(src, pos, @decode_table)
     end
   end
 
   @[AlwaysInline]
   private def encode_one(cp : UInt32, dst : Bytes, pos : Int32) : EncodeResult
     case @to.id
-    in EncodingID::ASCII      then Encode.ascii(cp, dst, pos)
-    in EncodingID::UTF8       then Encode.utf8(cp, dst, pos)
-    in EncodingID::ISO_8859_1 then Encode.iso_8859_1(cp, dst, pos)
+    when .ascii?      then Encode.ascii(cp, dst, pos)
+    when .utf8?       then Encode.utf8(cp, dst, pos)
+    when .iso_8859_1? then Encode.iso_8859_1(cp, dst, pos)
+    else Encode.single_byte_table(cp, dst, pos, @encode_table)
     end
   end
 

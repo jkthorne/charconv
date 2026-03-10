@@ -71,4 +71,13 @@ module Iconvcr::Decode
     return DecodeResult::TOOFEW if pos >= src.size
     DecodeResult.new(src.unsafe_fetch(pos).to_u32, 1)
   end
+
+  # Generic single-byte decode using a 256-entry table (full byte range).
+  @[AlwaysInline]
+  def self.single_byte_table(src : Bytes, pos : Int32, table : Pointer(UInt16)) : DecodeResult
+    return DecodeResult::TOOFEW if pos >= src.size
+    byte = src.unsafe_fetch(pos)
+    cp = table[byte].to_u32
+    cp == 0xFFFF ? DecodeResult::ILSEQ : DecodeResult.new(cp, 1)
+  end
 end

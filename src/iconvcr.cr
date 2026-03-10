@@ -1,6 +1,8 @@
 require "./iconvcr/types"
 require "./iconvcr/decode"
 require "./iconvcr/encode"
+require "./iconvcr/tables/single_byte"
+require "./iconvcr/tables/table_index"
 require "./iconvcr/registry"
 require "./iconvcr/converter"
 

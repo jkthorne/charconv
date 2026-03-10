@@ -52,4 +52,19 @@ module Iconvcr::Encode
       EncodeResult::ILUNI
     end
   end
+
+  # Generic single-byte encode using a 64KB lookup table (codepoint → byte).
+  # Byte 0 means not representable (except codepoint 0 → byte 0 is valid).
+  @[AlwaysInline]
+  def self.single_byte_table(cp : UInt32, dst : Bytes, pos : Int32, table : Pointer(UInt8)) : EncodeResult
+    return EncodeResult::TOOSMALL if pos >= dst.size
+    return EncodeResult::ILUNI if cp > 0xFFFF
+    byte = table[cp]
+    if byte == 0 && cp != 0
+      EncodeResult::ILUNI
+    else
+      dst.to_unsafe[pos] = byte
+      EncodeResult.new(1)
+    end
+  end
 end
