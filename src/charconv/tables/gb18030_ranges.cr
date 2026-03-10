@@ -6,7 +6,7 @@
 # Each entry: {linear_start, unicode_start, count}
 # Supplementary plane starts at linear index -1
 
-module Iconvcr::Tables::GB18030Ranges
+module CharConv::Tables::GB18030Ranges
   SUPP_START_LINEAR = 189000
 
   # {linear_start, unicode_start, count}

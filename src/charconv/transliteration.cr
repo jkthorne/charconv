@@ -5,7 +5,7 @@
 # Each entry: {codepoint, {replacement_codepoints...}} with 0-padding
 # Binary search for O(log n) lookup
 
-module Iconvcr::Transliteration
+module CharConv::Transliteration
   # Max replacement length (in codepoints)
   MAX_REPL = 4
 

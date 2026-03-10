@@ -1,4 +1,4 @@
-module Iconvcr::Registry
+module CharConv::Registry
   private ASCII_INFO      = EncodingInfo.new(EncodingID::ASCII, true, 1_u8, false)
   private UTF8_INFO       = EncodingInfo.new(EncodingID::UTF8, true, 4_u8, false)
   private ISO_8859_1_INFO = EncodingInfo.new(EncodingID::ISO_8859_1, true, 1_u8, false)

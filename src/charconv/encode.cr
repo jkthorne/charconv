@@ -1,4 +1,4 @@
-module Iconvcr::Encode
+module CharConv::Encode
   @[AlwaysInline]
   def self.ascii(cp : UInt32, dst : Bytes, pos : Int32) : EncodeResult
     return EncodeResult::TOOSMALL if pos >= dst.size

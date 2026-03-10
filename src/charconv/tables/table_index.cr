@@ -1,4 +1,4 @@
-module Iconvcr::Tables
+module CharConv::Tables
   # Indexed by EncodingID.value. Null for ASCII/UTF8/ISO_8859_1 (dedicated codecs).
   DECODE_TABLES = begin
     count = EncodingID.values.size

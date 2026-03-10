@@ -1,4 +1,4 @@
-module Iconvcr::Codec::UTF16
+module CharConv::Codec::UTF16
   @[AlwaysInline]
   def self.decode_be(src : Bytes, pos : Int32) : DecodeResult
     remaining = src.size - pos

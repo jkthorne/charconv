@@ -10,7 +10,7 @@
 #   0 = ASCII mode (initial)
 #   1 = GB2312 mode
 
-module Iconvcr::Codec::HZ
+module CharConv::Codec::HZ
   def self.decode(src : Bytes, pos : Int32, state : Pointer(CodecState)) : DecodeResult
     remaining = src.size - pos
     return DecodeResult::TOOFEW if remaining < 1

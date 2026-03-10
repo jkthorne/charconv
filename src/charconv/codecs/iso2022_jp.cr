@@ -17,7 +17,7 @@
 #
 # For now we implement base ISO-2022-JP (modes 0-3).
 
-module Iconvcr::Codec::ISO2022JP
+module CharConv::Codec::ISO2022JP
   # Decode: reads escape sequences to switch modes, then decodes characters
   def self.decode(src : Bytes, pos : Int32, state : Pointer(CodecState)) : DecodeResult
     remaining = src.size - pos

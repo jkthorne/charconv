@@ -1,4 +1,4 @@
-module Iconvcr::Codec::C99
+module CharConv::Codec::C99
   @[AlwaysInline]
   def self.decode(src : Bytes, pos : Int32) : DecodeResult
     remaining = src.size - pos
@@ -123,7 +123,7 @@ module Iconvcr::Codec::C99
   end
 end
 
-module Iconvcr::Codec::Java
+module CharConv::Codec::Java
   @[AlwaysInline]
   def self.decode(src : Bytes, pos : Int32) : DecodeResult
     remaining = src.size - pos

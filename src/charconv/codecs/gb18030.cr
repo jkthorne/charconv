@@ -8,7 +8,7 @@
 # The 4-byte form covers all of Unicode not covered by 2-byte form.
 # Linear index: ((b1-0x81)*10 + (b2-0x30)) * 126 * 10 + (b3-0x81) * 10 + (b4-0x30)
 
-module Iconvcr::Codec::GB18030
+module CharConv::Codec::GB18030
   # Decode GB18030
   def self.decode(src : Bytes, pos : Int32) : DecodeResult
     remaining = src.size - pos

@@ -12,7 +12,7 @@
 #
 # Shift: SO (0x0E) invokes G1, SI (0x0F) returns to ASCII
 
-module Iconvcr::Codec::ISO2022CN
+module CharConv::Codec::ISO2022CN
   def self.decode(src : Bytes, pos : Int32, state : Pointer(CodecState)) : DecodeResult
     remaining = src.size - pos
     return DecodeResult::TOOFEW if remaining < 1

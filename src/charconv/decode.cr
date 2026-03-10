@@ -1,4 +1,4 @@
-module Iconvcr::Decode
+module CharConv::Decode
   @[AlwaysInline]
   def self.ascii(src : Bytes, pos : Int32) : DecodeResult
     return DecodeResult::TOOFEW if pos >= src.size

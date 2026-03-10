@@ -1,4 +1,4 @@
-module Iconvcr
+module CharConv
   # Stack-allocated result from decoding one character.
   # `status` > 0: number of bytes consumed; `codepoint` is the decoded value.
   # `status` == 0: incomplete sequence (need more input).

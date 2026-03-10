@@ -10,7 +10,7 @@
 #   0 = not designated
 #   1 = KSC 5601 designated
 
-module Iconvcr::Codec::ISO2022KR
+module CharConv::Codec::ISO2022KR
   def self.decode(src : Bytes, pos : Int32, state : Pointer(CodecState)) : DecodeResult
     remaining = src.size - pos
     return DecodeResult::TOOFEW if remaining < 1

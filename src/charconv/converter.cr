@@ -1,4 +1,4 @@
-class Iconvcr::Converter
+class CharConv::Converter
   getter from : EncodingInfo
   getter to : EncodingInfo
   getter flags : ConversionFlags
@@ -491,7 +491,7 @@ class Iconvcr::Converter
 
     if src_consumed < input.size
       unless @flags.ignore?
-        raise Iconvcr::ConversionError.new(
+        raise CharConv::ConversionError.new(
           "Conversion failed at byte #{src_consumed} (#{src_consumed}/#{input.size} bytes consumed)"
         )
       end
@@ -523,7 +523,7 @@ class Iconvcr::Converter
         if at_eof
           # Unconsumed bytes at EOF — incomplete sequence
           unless @flags.ignore?
-            raise Iconvcr::ConversionError.new(
+            raise CharConv::ConversionError.new(
               "Incomplete sequence at end of input (#{remaining} byte(s) remaining)"
             )
           end

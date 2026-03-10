@@ -4,7 +4,7 @@
 # Each encoding uses a 2D decode table (lead × trail → codepoint) and a
 # two-level page table for encode (codepoint → 2 bytes).
 
-module Iconvcr::Codec::CJK
+module CharConv::Codec::CJK
   # -----------------------------------------------------------------------
   # Generic 2D table decode: lead + trail → codepoint
   # -----------------------------------------------------------------------

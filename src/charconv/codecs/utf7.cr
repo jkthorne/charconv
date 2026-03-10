@@ -1,4 +1,4 @@
-module Iconvcr::Codec::UTF7
+module CharConv::Codec::UTF7
   # Modified Base64 alphabet per RFC 2152
   BASE64_ENCODE = StaticArray(UInt8, 64).new { |i|
     case i
