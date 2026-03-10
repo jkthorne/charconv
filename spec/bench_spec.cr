@@ -81,30 +81,30 @@ describe "Benchmarks" do
     puts "=" * 60
 
     puts "\n--- ASCII → ASCII ---"
-    conv = Iconvcr::Converter.new("ASCII", "ASCII")
+    conv = CharConv::Converter.new("ASCII", "ASCII")
     Benchmark.ips do |x|
-      x.report("iconvcr") { conv.convert(ascii_data, out_4mb) }
+      x.report("charconv") { conv.convert(ascii_data, out_4mb) }
       x.report("system iconv") { bench_system_iconv(ascii_data, "ASCII", "ASCII", out_4mb) }
     end
 
     puts "\n--- UTF-8 → ISO-8859-1 (mixed Latin ~80% ASCII) ---"
-    conv = Iconvcr::Converter.new("UTF-8", "ISO-8859-1")
+    conv = CharConv::Converter.new("UTF-8", "ISO-8859-1")
     Benchmark.ips do |x|
-      x.report("iconvcr") { conv.convert(mixed_latin, out_4mb) }
+      x.report("charconv") { conv.convert(mixed_latin, out_4mb) }
       x.report("system iconv") { bench_system_iconv(mixed_latin, "UTF-8", "ISO-8859-1", out_4mb) }
     end
 
     puts "\n--- ISO-8859-1 → UTF-8 ---"
-    conv = Iconvcr::Converter.new("ISO-8859-1", "UTF-8")
+    conv = CharConv::Converter.new("ISO-8859-1", "UTF-8")
     Benchmark.ips do |x|
-      x.report("iconvcr") { conv.convert(iso_data, out_4mb) }
+      x.report("charconv") { conv.convert(iso_data, out_4mb) }
       x.report("system iconv") { bench_system_iconv(iso_data, "ISO-8859-1", "UTF-8", out_4mb) }
     end
 
     puts "\n--- UTF-8 → UTF-8 (mixed widths) ---"
-    conv = Iconvcr::Converter.new("UTF-8", "UTF-8")
+    conv = CharConv::Converter.new("UTF-8", "UTF-8")
     Benchmark.ips do |x|
-      x.report("iconvcr") { conv.convert(utf8_data, out_4mb) }
+      x.report("charconv") { conv.convert(utf8_data, out_4mb) }
       x.report("system iconv") { bench_system_iconv(utf8_data, "UTF-8", "UTF-8", out_4mb) }
     end
 
@@ -114,35 +114,35 @@ describe "Benchmarks" do
     cp1252_data = Bytes.new(SIZE) { |i| cp1252_valid[i % cp1252_valid.size].to_u8 }
 
     puts "\n--- CP1252 → UTF-8 ---"
-    conv = Iconvcr::Converter.new("CP1252", "UTF-8")
+    conv = CharConv::Converter.new("CP1252", "UTF-8")
     Benchmark.ips do |x|
-      x.report("iconvcr") { conv.convert(cp1252_data, out_4mb) }
+      x.report("charconv") { conv.convert(cp1252_data, out_4mb) }
       x.report("system iconv") { bench_system_iconv(cp1252_data, "CP1252", "UTF-8", out_4mb) }
     end
 
     puts "\n--- UTF-8 → CP1252 (mixed Latin ~80% ASCII) ---"
-    conv = Iconvcr::Converter.new("UTF-8", "CP1252")
+    conv = CharConv::Converter.new("UTF-8", "CP1252")
     Benchmark.ips do |x|
-      x.report("iconvcr") { conv.convert(mixed_latin, out_4mb) }
+      x.report("charconv") { conv.convert(mixed_latin, out_4mb) }
       x.report("system iconv") { bench_system_iconv(mixed_latin, "UTF-8", "CP1252", out_4mb) }
     end
 
     # Phase 3: Unicode encoding benchmarks
     # Generate UTF-16BE data from mixed UTF-8
-    utf16be_data = Iconvcr.convert(utf8_data, "UTF-8", "UTF-16BE")
-    utf16le_data = Iconvcr.convert(utf8_data, "UTF-8", "UTF-16LE")
+    utf16be_data = CharConv.convert(utf8_data, "UTF-8", "UTF-16BE")
+    utf16le_data = CharConv.convert(utf8_data, "UTF-8", "UTF-16LE")
 
     puts "\n--- UTF-16BE → UTF-8 (mixed widths) ---"
-    conv = Iconvcr::Converter.new("UTF-16BE", "UTF-8")
+    conv = CharConv::Converter.new("UTF-16BE", "UTF-8")
     Benchmark.ips do |x|
-      x.report("iconvcr") { conv.convert(utf16be_data, out_4mb) }
+      x.report("charconv") { conv.convert(utf16be_data, out_4mb) }
       x.report("system iconv") { bench_system_iconv(utf16be_data, "UTF-16BE", "UTF-8", out_4mb) }
     end
 
     puts "\n--- UTF-8 → UTF-16LE ---"
-    conv = Iconvcr::Converter.new("UTF-8", "UTF-16LE")
+    conv = CharConv::Converter.new("UTF-8", "UTF-16LE")
     Benchmark.ips do |x|
-      x.report("iconvcr") { conv.convert(utf8_data, out_4mb) }
+      x.report("charconv") { conv.convert(utf8_data, out_4mb) }
       x.report("system iconv") { bench_system_iconv(utf8_data, "UTF-8", "UTF-16LE", out_4mb) }
     end
 

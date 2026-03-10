@@ -1,2 +1,2 @@
 require "spec"
-require "../src/iconvcr"
+require "../src/charconv"

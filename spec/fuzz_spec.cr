@@ -54,7 +54,7 @@ describe "Fuzz: //IGNORE never crashes" do
       FUZZ_ITERATIONS.times do
         size = rng.rand(1..FUZZ_MAX_SIZE)
         input = random_bytes(rng, size)
-        result = Iconvcr.convert(input, enc, "UTF-8//IGNORE")
+        result = CharConv.convert(input, enc, "UTF-8//IGNORE")
         # Result should be valid UTF-8
         result.size.should be >= 0
       end
@@ -65,7 +65,7 @@ describe "Fuzz: //IGNORE never crashes" do
       FUZZ_ITERATIONS.times do
         size = rng.rand(1..FUZZ_MAX_SIZE)
         input = random_bytes(rng, size)
-        result = Iconvcr.convert(input, "UTF-8", "#{enc}//IGNORE")
+        result = CharConv.convert(input, "UTF-8", "#{enc}//IGNORE")
         result.size.should be >= 0
       end
     end
@@ -83,7 +83,7 @@ describe "Fuzz: //IGNORE never crashes" do
       FUZZ_ITERATIONS.times do
         size = rng.rand(1..FUZZ_MAX_SIZE)
         input = random_bytes(rng, size)
-        result = Iconvcr.convert(input, enc, "UTF-8//IGNORE")
+        result = CharConv.convert(input, enc, "UTF-8//IGNORE")
         result.size.should be >= 0
       end
     end
@@ -93,7 +93,7 @@ describe "Fuzz: //IGNORE never crashes" do
       FUZZ_ITERATIONS.times do
         size = rng.rand(1..FUZZ_MAX_SIZE)
         input = random_bytes(rng, size)
-        result = Iconvcr.convert(input, "UTF-8", "#{enc}//IGNORE")
+        result = CharConv.convert(input, "UTF-8", "#{enc}//IGNORE")
         result.size.should be >= 0
       end
     end
@@ -108,7 +108,7 @@ describe "Fuzz: //IGNORE never crashes" do
       FUZZ_ITERATIONS.times do
         size = rng.rand(1..FUZZ_MAX_SIZE)
         input = random_bytes(rng, size)
-        result = Iconvcr.convert(input, enc, "UTF-8//IGNORE")
+        result = CharConv.convert(input, enc, "UTF-8//IGNORE")
         result.size.should be >= 0
       end
     end
@@ -127,7 +127,7 @@ describe "Fuzz: //IGNORE never crashes" do
       FUZZ_ITERATIONS.times do
         size = rng.rand(1..FUZZ_MAX_SIZE)
         input = random_bytes(rng, size)
-        result = Iconvcr.convert(input, from_enc, "#{to_enc}//IGNORE")
+        result = CharConv.convert(input, from_enc, "#{to_enc}//IGNORE")
         result.size.should be >= 0
       end
     end
@@ -145,7 +145,7 @@ describe "Fuzz: //IGNORE matches system iconv for single-byte" do
       FUZZ_ITERATIONS.times do
         size = rng.rand(1..FUZZ_MAX_SIZE)
         input = random_bytes(rng, size)
-        ours = Iconvcr.convert(input, enc, "UTF-8//IGNORE")
+        ours = CharConv.convert(input, enc, "UTF-8//IGNORE")
         sys = system_iconv_ignore(input, enc, "UTF-8")
         ours.should eq(sys) if sys
       end

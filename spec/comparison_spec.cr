@@ -107,7 +107,7 @@ describe "System iconv comparison" do
           input = "Hello, World! 0123456789".to_slice
         end
         expected = system_iconv_convert(input, from, to)
-        actual = Iconvcr.convert(input, from, to)
+        actual = CharConv.convert(input, from, to)
         actual.should eq(expected)
       end
 
@@ -121,7 +121,7 @@ describe "System iconv comparison" do
           unless to == "ASCII" # ASCII can't represent these
             begin
               expected = system_iconv_convert(input, from, to)
-              actual = Iconvcr.convert(input, from, to)
+              actual = CharConv.convert(input, from, to)
               actual.should eq(expected)
             rescue
               # Some target encodings may not support all Latin-1 chars — skip
@@ -132,7 +132,7 @@ describe "System iconv comparison" do
           unless to == "ASCII"
             begin
               expected = system_iconv_convert(input, from, to)
-              actual = Iconvcr.convert(input, from, to)
+              actual = CharConv.convert(input, from, to)
               actual.should eq(expected)
             rescue
               # Target encoding may not support all Latin-1 chars
@@ -144,7 +144,7 @@ describe "System iconv comparison" do
             begin
               input = system_iconv_convert("éñü©®".to_slice, "UTF-8", from)
               expected = system_iconv_convert(input, from, to)
-              actual = Iconvcr.convert(input, from, to)
+              actual = CharConv.convert(input, from, to)
               actual.should eq(expected)
             rescue
               # Some encodings may not support all chars — skip
@@ -154,7 +154,7 @@ describe "System iconv comparison" do
             input = Bytes.new(32) { |i| (0xC0 + (i % 32)).to_u8 }
             begin
               expected = system_iconv_convert(input, from, to)
-              actual = Iconvcr.convert(input, from, to)
+              actual = CharConv.convert(input, from, to)
               actual.should eq(expected)
             rescue
               # Some bytes may be undefined, skip
@@ -167,13 +167,13 @@ describe "System iconv comparison" do
         if from == "UTF-8" && to == "UTF-8"
           input = "Hello 世界 🌍".to_slice
           expected = system_iconv_convert(input, from, to)
-          actual = Iconvcr.convert(input, from, to)
+          actual = CharConv.convert(input, from, to)
           actual.should eq(expected)
         elsif from == "UTF-8"
           begin
             input = "Hello 世界 🌍".to_slice
             expected = system_iconv_convert(input, from, to)
-            actual = Iconvcr.convert(input, from, to)
+            actual = CharConv.convert(input, from, to)
             actual.should eq(expected)
           rescue
             # Target may not support all characters
@@ -182,7 +182,7 @@ describe "System iconv comparison" do
           begin
             input = system_iconv_convert("Hello 世界 🌍".to_slice, "UTF-8", from)
             expected = system_iconv_convert(input, from, to)
-            actual = Iconvcr.convert(input, from, to)
+            actual = CharConv.convert(input, from, to)
             actual.should eq(expected)
           rescue
             # Some encodings can't represent supplementary chars

@@ -96,7 +96,7 @@ describe "Exhaustive single-byte encoding correctness" do
           sys_result = system_iconv_byte(b, encoding, "UTF-8")
 
           begin
-            our_result = Iconvcr.convert(Bytes[b], encoding, "UTF-8")
+            our_result = CharConv.convert(Bytes[b], encoding, "UTF-8")
             if sys_result
               unless our_result == sys_result
                 mismatches += 1
@@ -110,7 +110,7 @@ describe "Exhaustive single-byte encoding correctness" do
               STDERR.puts "  MISMATCH #{encoding} byte 0x#{byte_val.to_s(16).rjust(2, '0')}: " \
                           "ours succeeded, system failed" if mismatches <= 5
             end
-          rescue Iconvcr::ConversionError
+          rescue CharConv::ConversionError
             unless sys_result.nil?
               mismatches += 1
               STDERR.puts "  MISMATCH #{encoding} byte 0x#{byte_val.to_s(16).rjust(2, '0')}: " \
@@ -143,7 +143,7 @@ describe "Exhaustive single-byte encoding correctness" do
           next if sys_encoded.size != 1
 
           begin
-            our_encoded = Iconvcr.convert(utf8_bytes, "UTF-8", encoding)
+            our_encoded = CharConv.convert(utf8_bytes, "UTF-8", encoding)
             if our_encoded != sys_encoded
               # Our byte differs — verify round-trip: decode our byte back and compare codepoints
               our_roundtrip = system_iconv_byte(our_encoded[0], encoding, "UTF-8")
@@ -155,7 +155,7 @@ describe "Exhaustive single-byte encoding correctness" do
                             "(round-trip differs)" if mismatches <= 5
               end
             end
-          rescue Iconvcr::ConversionError
+          rescue CharConv::ConversionError
             mismatches += 1
             STDERR.puts "  ENCODE MISMATCH #{encoding} byte 0x#{byte_val.to_s(16).rjust(2, '0')}: " \
                         "ours=ERROR sys=#{sys_encoded.map(&.to_s(16)).join(" ")}" if mismatches <= 5

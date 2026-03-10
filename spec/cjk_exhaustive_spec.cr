@@ -46,7 +46,7 @@ describe "CJK exhaustive decode comparison" do
       cd_sys = LibC.iconv_open("UTF-8", encoding)
       next if cd_sys.address == ~LibC::SizeT.new(0)
 
-      converter = Iconvcr::Converter.new(encoding, "UTF-8")
+      converter = CharConv::Converter.new(encoding, "UTF-8")
       mismatches = 0
       first_mismatch = ""
 
