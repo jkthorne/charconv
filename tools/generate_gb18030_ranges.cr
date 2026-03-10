@@ -3,7 +3,7 @@
 # Generates the GB18030 4-byte range mapping tables by probing system iconv.
 # For every BMP codepoint NOT in the GBK 2-byte range, we probe GB18030
 # and record the 4-byte linear index.
-# Output: src/iconvcr/tables/gb18030_ranges.cr
+# Output: src/charconv/tables/gb18030_ranges.cr
 
 def iconv_convert(cd : LibC::IconvT, input : Bytes, output : Bytes) : Int32
   in_ptr = input.to_unsafe.as(LibC::Char*)
@@ -153,7 +153,7 @@ io.puts "# for BMP characters not in GBK 2-byte form."
 io.puts "# Each entry: {linear_start, unicode_start, count}"
 io.puts "# Supplementary plane starts at linear index #{supp_start_linear}"
 io.puts ""
-io.puts "module Iconvcr::Tables::GB18030Ranges"
+io.puts "module CharConv::Tables::GB18030Ranges"
 io.puts "  SUPP_START_LINEAR = #{supp_start_linear}"
 io.puts ""
 io.puts "  # {linear_start, unicode_start, count}"
@@ -166,7 +166,7 @@ end
 io.puts "  ]"
 io.puts "end"
 
-output_path = File.join(__DIR__, "..", "src", "iconvcr", "tables", "gb18030_ranges.cr")
+output_path = File.join(__DIR__, "..", "src", "charconv", "tables", "gb18030_ranges.cr")
 File.write(output_path, io.to_s)
 
 puts "Written: #{output_path}"

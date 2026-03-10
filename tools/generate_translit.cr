@@ -1,7 +1,7 @@
 # Generates transliteration lookup table from Unicode NFKD decomposition data
 # and manual mappings for symbols, ligatures, etc.
 #
-# Usage: crystal run tools/generate_translit.cr > src/iconvcr/transliteration.cr
+# Usage: crystal run tools/generate_translit.cr > src/charconv/transliteration.cr
 
 # Manual mappings: {codepoint, replacement_string}
 # These override or supplement NFKD decomposition
@@ -260,7 +260,7 @@ puts "#"
 puts "# Each entry: {codepoint, {replacement_codepoints...}} with 0-padding"
 puts "# Binary search for O(log n) lookup"
 puts ""
-puts "module Iconvcr::Transliteration"
+puts "module CharConv::Transliteration"
 puts "  # Max replacement length (in codepoints)"
 puts "  MAX_REPL = 4"
 puts ""

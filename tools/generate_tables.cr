@@ -2,7 +2,7 @@
 
 # Generates single-byte encoding tables by probing system iconv.
 # Probes BOTH directions: decode (encoding→UTF-32LE) and encode (UTF-8→encoding).
-# Output: src/iconvcr/tables/single_byte.cr
+# Output: src/charconv/tables/single_byte.cr
 
 # LibC iconv bindings are already available in Crystal stdlib
 
@@ -234,7 +234,7 @@ io.puts "# Each DECODE table is 256 entries mapping byte 0x00-0xFF to Unicode co
 io.puts "# 0xFFFF = undefined (ILSEQ)."
 io.puts "# Each ENCODE_PAIRS array lists {codepoint, byte} from system iconv's encode direction."
 io.puts ""
-io.puts "module Iconvcr::Tables::SingleByte"
+io.puts "module CharConv::Tables::SingleByte"
 
 non_ascii_supersets = [] of String
 
@@ -261,7 +261,7 @@ end
 
 io.puts "end"
 
-output_path = File.join(__DIR__, "..", "src", "iconvcr", "tables", "single_byte.cr")
+output_path = File.join(__DIR__, "..", "src", "charconv", "tables", "single_byte.cr")
 File.write(output_path, io.to_s)
 
 puts "Generated #{output_path}"
