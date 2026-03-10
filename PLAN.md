@@ -7,75 +7,46 @@ This plan covers the remaining work to reach a v0.1.0 release.
 
 ## Current State
 
-- **548 tests, 29 failures, 28 errors** (as of 2026-03-10)
-- All failures are in exhaustive/comparison tests against system iconv
+- **548 tests, 0 failures, 0 errors** (as of 2026-03-10)
+- All encoding families passing exhaustive correctness tests against system iconv
 - Core converter, all codecs, tables, transliteration, and flags are implemented
 - No CI/CD, no real README, no IO streaming wrapper
 
-## Bug #1: NUL Byte (0x00) Dropped for Non-ASCII-Superset Encodings
+## Completed: Phase A — Bug Fixes
 
-**Affected:** All 28 non-ASCII-superset encodings (Mac*, CP864, VISCII, EBCDIC*, TCVN)
-**Cause:** `converter.cr:437-439` — the `convert_general` loop skips any decoded
-character where `codepoint == 0 && status > 0`. This was intended to handle stateful
-escape sequences (which return codepoint 0 to mean "consumed bytes, no character
-produced"), but it incorrectly drops legitimate NUL bytes (U+0000).
+### Bug #1: NUL Byte Dropped for Non-ASCII-Superset Encodings (FIXED)
 
-```crystal
-# Current (broken):
-if dr.codepoint == 0 && dr.status > 0
-  src_pos += dr.status
-  next
-end
+**Root cause:** `converter.cr` `convert_general` loop had `if dr.codepoint == 0 && dr.status > 0`
+which skipped ALL decoded NUL codepoints, not just stateful escape sequence signals.
 
-# Fix: only skip for stateful codecs
-```
+**Fix:** Added `&& @from.stateful` guard — one line change. This was the sole cause of
+all 57 test failures (29 failures + 28 errors). The TCVN table was correct; its 44 letter
+positions genuinely map to U+0000 in macOS's TCVN encoding, and the NUL-skip bug was
+dropping them.
 
-**Fix:** Guard the skip with a check for stateful encodings only. Stateful codecs
-(ISO-2022-*, UTF-7, HZ) use codepoint 0 + status > 0 as a signal for escape sequence
-consumption. Table-driven and other codecs never produce this signal — a decoded
-codepoint of 0 is always a real NUL.
+## Remaining Work
 
-**Impact:** Fixes 28 of the 29 decode failures (1 byte each) and 28 of the 28 encode
-errors (which cascade from decode failures in round-trip tests).
+### Phase B: IO Streaming + Polish (est. 1 day)
 
-## Bug #2: TCVN Encoding Has 45 Byte Mismatches
+#### Feature #1: IO Streaming Wrapper
 
-**Affected:** TCVN (TCVN-5712, Vietnamese)
-**Symptoms:** 45 bytes decode differently than macOS system iconv, including ASCII-range
-bytes (0x41 'A', 0x42 'B', etc.). Also fails the comparison_spec ASCII test.
-
-**Likely Causes (investigate in order):**
-1. **Name mismatch:** macOS system iconv may use a different name or variant for TCVN
-   than what our mapping tables encode. The TCVN standard has multiple revisions.
-2. **Table source mismatch:** The .TXT mapping file used to generate our table may
-   differ from the version macOS iconv uses internally.
-3. **Control character remapping:** TCVN remaps some bytes in the 0x00-0x1F and
-   0x80-0xFF ranges. Our table may have these mappings wrong or incomplete.
-
-**Fix:** Dump both our decode table and system iconv's byte-by-byte output for all 256
-bytes, diff them, and update the table to match system iconv. If the encoding name
-doesn't match, add the correct alias.
-
-## Feature #1: IO Streaming Wrapper
-
-The planned public API in the original design includes:
+The planned public API includes but has not implemented:
 
 ```crystal
 def convert(input : IO, output : IO, buffer_size : Int32 = 8192)
 ```
 
-This is not yet implemented. The core streaming `convert(Bytes, Bytes)` works, so
-the IO wrapper is straightforward: read chunks from input IO, convert, write to
-output IO, loop until EOF.
+The core streaming `convert(Bytes, Bytes)` works, so the IO wrapper is straightforward:
+read chunks from input IO, convert, write to output IO, loop until EOF.
 
 **Implementation:**
 - Add to `Converter` class in `converter.cr`
-- Read `buffer_size` bytes from input into a stack buffer
+- Read `buffer_size` bytes from input into a buffer
 - Call `convert(src, dst)` in a loop
 - Handle partial consumption (shift remaining bytes forward)
 - Flush stateful encoders at EOF
 
-## Feature #2: README Documentation
+#### Feature #2: README Documentation
 
 Replace the boilerplate README with real content:
 - Project description and motivation
@@ -86,17 +57,9 @@ Replace the boilerplate README with real content:
 - Flags (//IGNORE, //TRANSLIT)
 - License
 
-## Feature #3: GitHub Actions CI
+#### Feature #3: Performance Validation
 
-Add `.github/workflows/ci.yml`:
-- Run `crystal spec` on push/PR
-- Test on latest Crystal + minimum supported version (1.19.1)
-- Matrix: macOS + Linux (encoding tables may differ between system iconvs)
-- Benchmark job (non-blocking, for tracking regressions)
-
-## Feature #4: Performance Validation
-
-Run benchmarks against performance targets from the original plan:
+Run benchmarks against performance targets:
 
 | Operation | Target |
 |-----------|--------|
@@ -107,25 +70,9 @@ Run benchmarks against performance targets from the original plan:
 | EUC-JP → UTF-8 | >200 MB/s |
 | GB18030 → UTF-8 | >100 MB/s |
 
-Identify and fix any that miss their targets. The bench_spec.cr exists but hasn't
-been run systematically against these targets.
-
-## Execution Order
-
-### Phase A: Fix Test Failures (est. 1 day)
-1. Fix NUL byte bug in `convert_general` (guard with stateful check)
-2. Run tests — expect 28 fewer failures
-3. Investigate and fix TCVN mismatches (table diff + update)
-4. Run full test suite — target: 0 failures
-
-### Phase B: IO Streaming + Polish (est. 1 day)
-1. Implement `convert(IO, IO)` wrapper
-2. Add tests for IO streaming (large files, multi-chunk, stateful encodings)
-3. Run performance benchmarks, document results
-4. Write README
-
 ### Phase C: CI/CD + Release Prep (est. 0.5 day)
-1. Add GitHub Actions workflow
+
+1. Add `.github/workflows/ci.yml` (crystal spec on push/PR, macOS + Linux matrix)
 2. Tag v0.1.0 release
 3. Publish to shards registry
 
