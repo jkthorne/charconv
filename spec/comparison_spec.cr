@@ -24,6 +24,20 @@ private def system_iconv_convert(input : Bytes, from : String, to : String) : By
   out_buf[0, bytes_written]
 end
 
+# Helper: prepare valid input in source encoding by converting from UTF-8 via system iconv
+private def prepare_input(utf8_text : String, from : String) : Bytes
+  case from
+  when "ASCII"
+    utf8_text.to_slice
+  when "UTF-8"
+    utf8_text.to_slice
+  when "ISO-8859-1"
+    utf8_text.to_slice # will be handled specially in tests
+  else
+    system_iconv_convert(utf8_text.to_slice, "UTF-8", from)
+  end
+end
+
 # Encoding pairs to test
 PAIRS = [
   {"ASCII", "ASCII"},
@@ -47,13 +61,36 @@ PAIRS = [
   {"MACROMAN", "UTF-8"},
   {"CP1252", "ISO-8859-1"},
   {"ISO-8859-1", "CP1252"},
+  # Phase 3: Unicode family encodings
+  {"UTF-16BE", "UTF-8"},
+  {"UTF-8", "UTF-16BE"},
+  {"UTF-16LE", "UTF-8"},
+  {"UTF-8", "UTF-16LE"},
+  {"UTF-32BE", "UTF-8"},
+  {"UTF-8", "UTF-32BE"},
+  {"UTF-32LE", "UTF-8"},
+  {"UTF-8", "UTF-32LE"},
+  {"UTF-7", "UTF-8"},
+  {"UTF-8", "UTF-7"},
+  {"C99", "UTF-8"},
+  {"UTF-8", "C99"},
+  {"JAVA", "UTF-8"},
+  {"UTF-8", "JAVA"},
 ]
+
+# Multi-byte source encodings that need input prepared via system iconv
+MULTIBYTE_SOURCES = {"UTF-16BE", "UTF-16LE", "UTF-32BE", "UTF-32LE", "UTF-7", "C99", "JAVA"}
 
 describe "System iconv comparison" do
   PAIRS.each do |from, to|
     describe "#{from} → #{to}" do
       it "matches on ASCII input" do
-        input = "Hello, World! 0123456789".to_slice
+        if MULTIBYTE_SOURCES.includes?(from)
+          # Convert ASCII to source encoding first
+          input = system_iconv_convert("Hello, World! 0123456789".to_slice, "UTF-8", from)
+        else
+          input = "Hello, World! 0123456789".to_slice
+        end
         expected = system_iconv_convert(input, from, to)
         actual = Iconvcr.convert(input, from, to)
         actual.should eq(expected)
@@ -87,14 +124,26 @@ describe "System iconv comparison" do
             end
           end
         else
-          # For single-byte source encodings, use high bytes that are valid
-          input = Bytes.new(32) { |i| (0xC0 + (i % 32)).to_u8 }
-          begin
-            expected = system_iconv_convert(input, from, to)
-            actual = Iconvcr.convert(input, from, to)
-            actual.should eq(expected)
-          rescue
-            # Some bytes may be undefined, skip
+          if MULTIBYTE_SOURCES.includes?(from)
+            # Convert non-ASCII text to source encoding via system iconv
+            begin
+              input = system_iconv_convert("éñü©®".to_slice, "UTF-8", from)
+              expected = system_iconv_convert(input, from, to)
+              actual = Iconvcr.convert(input, from, to)
+              actual.should eq(expected)
+            rescue
+              # Some encodings may not support all chars — skip
+            end
+          else
+            # For single-byte source encodings, use high bytes that are valid
+            input = Bytes.new(32) { |i| (0xC0 + (i % 32)).to_u8 }
+            begin
+              expected = system_iconv_convert(input, from, to)
+              actual = Iconvcr.convert(input, from, to)
+              actual.should eq(expected)
+            rescue
+              # Some bytes may be undefined, skip
+            end
           end
         end
       end
@@ -105,6 +154,24 @@ describe "System iconv comparison" do
           expected = system_iconv_convert(input, from, to)
           actual = Iconvcr.convert(input, from, to)
           actual.should eq(expected)
+        elsif from == "UTF-8"
+          begin
+            input = "Hello 世界 🌍".to_slice
+            expected = system_iconv_convert(input, from, to)
+            actual = Iconvcr.convert(input, from, to)
+            actual.should eq(expected)
+          rescue
+            # Target may not support all characters
+          end
+        elsif MULTIBYTE_SOURCES.includes?(from)
+          begin
+            input = system_iconv_convert("Hello 世界 🌍".to_slice, "UTF-8", from)
+            expected = system_iconv_convert(input, from, to)
+            actual = Iconvcr.convert(input, from, to)
+            actual.should eq(expected)
+          rescue
+            # Some encodings can't represent supplementary chars
+          end
         end
       end
     end

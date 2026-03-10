@@ -127,6 +127,25 @@ describe "Benchmarks" do
       x.report("system iconv") { bench_system_iconv(mixed_latin, "UTF-8", "CP1252", out_4mb) }
     end
 
+    # Phase 3: Unicode encoding benchmarks
+    # Generate UTF-16BE data from mixed UTF-8
+    utf16be_data = Iconvcr.convert(utf8_data, "UTF-8", "UTF-16BE")
+    utf16le_data = Iconvcr.convert(utf8_data, "UTF-8", "UTF-16LE")
+
+    puts "\n--- UTF-16BE → UTF-8 (mixed widths) ---"
+    conv = Iconvcr::Converter.new("UTF-16BE", "UTF-8")
+    Benchmark.ips do |x|
+      x.report("iconvcr") { conv.convert(utf16be_data, out_4mb) }
+      x.report("system iconv") { bench_system_iconv(utf16be_data, "UTF-16BE", "UTF-8", out_4mb) }
+    end
+
+    puts "\n--- UTF-8 → UTF-16LE ---"
+    conv = Iconvcr::Converter.new("UTF-8", "UTF-16LE")
+    Benchmark.ips do |x|
+      x.report("iconvcr") { conv.convert(utf8_data, out_4mb) }
+      x.report("system iconv") { bench_system_iconv(utf8_data, "UTF-8", "UTF-16LE", out_4mb) }
+    end
+
     puts "\n" + "=" * 60
   end
 end
