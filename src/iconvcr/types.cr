@@ -200,6 +200,12 @@ module Iconvcr
 
   # Per-codec mutable state. Unused in Phase 1 (stateless encodings only)
   # but establishes the struct layout for future stateful codecs.
+  @[Flags]
+  enum ConversionFlags : UInt8
+    Ignore   = 1 # //IGNORE — skip bad input bytes & unencodable chars
+    Translit = 2 # //TRANSLIT — try fallback mappings before giving up
+  end
+
   struct CodecState
     property mode : UInt8
     property flags : UInt8
