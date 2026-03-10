@@ -41,6 +41,16 @@ class Iconvcr::Converter
       @state_decode.mode = 0_u8 # BOM detection needed
     when .utf7?
       @state_decode.mode = 1_u8 # direct mode
+    when .hz?
+      @state_decode.mode = 0_u8 # ASCII mode
+    when .iso2022_jp?, .iso2022_jp1?, .iso2022_jp2?
+      @state_decode.mode = 0_u8 # ASCII mode
+    when .iso2022_cn?, .iso2022_cn_ext?
+      @state_decode.mode = 0_u8 # ASCII mode
+      @state_decode.flags = 0_u8 # no G1 designation
+    when .iso2022_kr?
+      @state_decode.mode = 0_u8 # ASCII mode
+      @state_decode.flags = 0_u8 # no designation
     else
       @state_decode.mode = 1_u8 # default: no BOM detection
     end
@@ -71,6 +81,16 @@ class Iconvcr::Converter
       @state_encode.mode = 0_u8 # will emit BOM
     when .utf7?
       @state_encode.mode = 1_u8 # direct mode
+    when .hz?
+      @state_encode.mode = 0_u8 # ASCII mode
+    when .iso2022_jp?, .iso2022_jp1?, .iso2022_jp2?
+      @state_encode.mode = 0_u8 # ASCII mode
+    when .iso2022_cn?, .iso2022_cn_ext?
+      @state_encode.mode = 0_u8 # ASCII mode
+      @state_encode.flags = 0_u8
+    when .iso2022_kr?
+      @state_encode.mode = 0_u8 # ASCII mode
+      @state_encode.flags = 0_u8
     else
       @state_encode.mode = 1_u8
     end
@@ -209,6 +229,29 @@ class Iconvcr::Converter
       Codec::UTF7.decode(src, pos, pointerof(@state_decode))
     when .c99?  then Codec::C99.decode(src, pos)
     when .java? then Codec::Java.decode(src, pos)
+    # CJK stateless
+    when .euc_jp?      then Codec::CJK.decode_euc_jp(src, pos)
+    when .shift_jis?   then Codec::CJK.decode_shift_jis(src, pos)
+    when .cp932?       then Codec::CJK.decode_cp932(src, pos)
+    when .gbk?         then Codec::CJK.decode_gbk(src, pos)
+    when .euc_cn?, .gb2312? then Codec::CJK.decode_euc_cn(src, pos)
+    when .big5?        then Codec::CJK.decode_big5(src, pos)
+    when .cp950?       then Codec::CJK.decode_cp950(src, pos)
+    when .big5_hkscs?  then Codec::CJK.decode_big5_hkscs(src, pos)
+    when .euc_kr?      then Codec::CJK.decode_euc_kr(src, pos)
+    when .cp949?       then Codec::CJK.decode_cp949(src, pos)
+    when .johab?       then Codec::CJK.decode_johab(src, pos)
+    when .euc_tw?      then Codec::CJK.decode_euc_tw(src, pos)
+    when .gb18030?     then Codec::GB18030.decode(src, pos)
+    # CJK stateful
+    when .iso2022_jp?, .iso2022_jp1?, .iso2022_jp2?
+      Codec::ISO2022JP.decode(src, pos, pointerof(@state_decode))
+    when .iso2022_cn?, .iso2022_cn_ext?
+      Codec::ISO2022CN.decode(src, pos, pointerof(@state_decode))
+    when .iso2022_kr?
+      Codec::ISO2022KR.decode(src, pos, pointerof(@state_decode))
+    when .hz?
+      Codec::HZ.decode(src, pos, pointerof(@state_decode))
     else Decode.single_byte_table(src, pos, @decode_table)
     end
   end
@@ -265,6 +308,29 @@ class Iconvcr::Converter
       Codec::UTF7.encode(cp, dst, pos, pointerof(@state_encode))
     when .c99?  then Codec::C99.encode(cp, dst, pos)
     when .java? then Codec::Java.encode(cp, dst, pos)
+    # CJK stateless
+    when .euc_jp?      then Codec::CJK.encode_euc_jp(cp, dst, pos)
+    when .shift_jis?   then Codec::CJK.encode_shift_jis(cp, dst, pos)
+    when .cp932?       then Codec::CJK.encode_cp932(cp, dst, pos)
+    when .gbk?         then Codec::CJK.encode_gbk(cp, dst, pos)
+    when .euc_cn?, .gb2312? then Codec::CJK.encode_euc_cn(cp, dst, pos)
+    when .big5?        then Codec::CJK.encode_big5(cp, dst, pos)
+    when .cp950?       then Codec::CJK.encode_cp950(cp, dst, pos)
+    when .big5_hkscs?  then Codec::CJK.encode_big5_hkscs(cp, dst, pos)
+    when .euc_kr?      then Codec::CJK.encode_euc_kr(cp, dst, pos)
+    when .cp949?       then Codec::CJK.encode_cp949(cp, dst, pos)
+    when .johab?       then Codec::CJK.encode_johab(cp, dst, pos)
+    when .euc_tw?      then Codec::CJK.encode_euc_tw(cp, dst, pos)
+    when .gb18030?     then Codec::GB18030.encode(cp, dst, pos)
+    # CJK stateful
+    when .iso2022_jp?, .iso2022_jp1?, .iso2022_jp2?
+      Codec::ISO2022JP.encode(cp, dst, pos, pointerof(@state_encode))
+    when .iso2022_cn?, .iso2022_cn_ext?
+      Codec::ISO2022CN.encode(cp, dst, pos, pointerof(@state_encode))
+    when .iso2022_kr?
+      Codec::ISO2022KR.encode(cp, dst, pos, pointerof(@state_encode))
+    when .hz?
+      Codec::HZ.encode(cp, dst, pos, pointerof(@state_encode))
     else Encode.single_byte_table(cp, dst, pos, @encode_table)
     end
   end
@@ -313,11 +379,11 @@ class Iconvcr::Converter
     src_pos = 0
     dst_pos = 0
 
-    # BOM handling — only fires once (when mode == 0)
-    if @state_decode.mode == 0_u8
+    # BOM handling — only for UTF-16/32 family (mode 0 = BOM detection needed)
+    if @state_decode.mode == 0_u8 && (@from.id.utf16? || @from.id.utf32? || @from.id.ucs2? || @from.id.ucs4?)
       src_pos = consume_decode_bom(src)
     end
-    if @state_encode.mode == 0_u8
+    if @state_encode.mode == 0_u8 && (@to.id.utf16? || @to.id.utf32? || @to.id.ucs2? || @to.id.ucs4?)
       dst_pos = emit_encode_bom(dst)
     end
 
@@ -327,6 +393,13 @@ class Iconvcr::Converter
         return {src_pos, dst_pos}
       elsif dr.status == 0
         return {src_pos, dst_pos}
+      end
+
+      # Stateful codecs return codepoint 0 with status > 0 for escape sequences
+      # (mode switches that consume bytes but produce no character)
+      if dr.codepoint == 0 && dr.status > 0
+        src_pos += dr.status
+        next
       end
 
       er = encode_one(dr.codepoint, dst, dst_pos)
@@ -358,13 +431,23 @@ class Iconvcr::Converter
     max_out = 16_i64 if max_out < 16
     # For BOM-detecting encodings, add space for BOM in output
     max_out += 4 if @to.id.utf16? || @to.id.utf32? || @to.id.ucs2? || @to.id.ucs4?
+    # For stateful encodings, add space for escape sequences and flush
+    max_out += 16 if @to.stateful
     dst = Bytes.new(max_out)
     src_consumed, dst_written = convert(input, dst)
 
-    # For UTF-7 encode, flush any remaining base64 state
+    # Flush stateful encoders
     if @to.id.utf7? && @state_encode.mode == 2_u8
       flush_written = Codec::UTF7.flush_base64(dst, dst_written, pointerof(@state_encode))
       dst_written += flush_written
+    elsif @to.id.iso2022_jp? || @to.id.iso2022_jp1? || @to.id.iso2022_jp2?
+      dst_written += Codec::ISO2022JP.flush(dst, dst_written, pointerof(@state_encode))
+    elsif @to.id.iso2022_cn? || @to.id.iso2022_cn_ext?
+      dst_written += Codec::ISO2022CN.flush(dst, dst_written, pointerof(@state_encode))
+    elsif @to.id.iso2022_kr?
+      dst_written += Codec::ISO2022KR.flush(dst, dst_written, pointerof(@state_encode))
+    elsif @to.id.hz?
+      dst_written += Codec::HZ.flush(dst, dst_written, pointerof(@state_encode))
     end
 
     if src_consumed < input.size
