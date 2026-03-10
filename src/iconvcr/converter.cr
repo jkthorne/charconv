@@ -433,8 +433,9 @@ class Iconvcr::Converter
       end
 
       # Stateful codecs return codepoint 0 with status > 0 for escape sequences
-      # (mode switches that consume bytes but produce no character)
-      if dr.codepoint == 0 && dr.status > 0
+      # (mode switches that consume bytes but produce no character).
+      # Only skip for stateful encodings — stateless codecs decoding to U+0000 is a real NUL.
+      if dr.codepoint == 0 && dr.status > 0 && @from.stateful
         src_pos += dr.status
         next
       end
