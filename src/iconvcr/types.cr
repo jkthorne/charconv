@@ -160,6 +160,32 @@ module Iconvcr
     RISCOS_LATIN1
     # Non-ASCII non-EBCDIC
     TCVN
+    # Phase 4: CJK encodings
+    # Japanese
+    EUC_JP
+    SHIFT_JIS
+    CP932
+    ISO2022_JP
+    ISO2022_JP1
+    ISO2022_JP2
+    # Chinese (Simplified)
+    GB2312
+    GBK
+    GB18030
+    EUC_CN
+    HZ
+    ISO2022_CN
+    ISO2022_CN_EXT
+    # Chinese (Traditional)
+    BIG5
+    CP950
+    BIG5_HKSCS
+    EUC_TW
+    # Korean
+    EUC_KR
+    CP949
+    ISO2022_KR
+    JOHAB
   end
 
   struct EncodingInfo
