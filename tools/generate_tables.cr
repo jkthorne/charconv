@@ -71,6 +71,39 @@ ENCODINGS = {
   {"NEXTSTEP", "NEXTSTEP"},
   {"PT154", "PT154"},
   {"KOI8_T", "KOI8-T"},
+  # Phase 5: EBCDIC encodings
+  {"CP037", "CP037"},
+  {"CP273", "CP273"},
+  {"CP277", "CP277"},
+  {"CP278", "CP278"},
+  {"CP280", "CP280"},
+  {"CP284", "CP284"},
+  {"CP285", "CP285"},
+  {"CP297", "CP297"},
+  {"CP423", "CP423"},
+  {"CP424", "CP424"},
+  {"CP500", "CP500"},
+  {"CP905", "CP905"},
+  {"CP1026", "CP1026"},
+  # Phase 5: ASCII-superset single-byte
+  {"CP856", "CP856"},
+  {"CP922", "CP922"},
+  {"CP853", "CP853"},
+  {"CP1046", "CP1046"},
+  {"CP1124", "CP1124"},
+  {"CP1125", "CP1125"},
+  {"CP1129", "CP1129"},
+  {"CP1131", "CP1131"},
+  {"CP1133", "CP1133"},
+  {"CP1161", "CP1161"},
+  {"CP1162", "CP1162"},
+  {"CP1163", "CP1163"},
+  {"ATARIST", "ATARIST"},
+  {"KZ_1048", "KZ-1048"},
+  {"MULELAO_1", "MULELAO-1"},
+  {"RISCOS_LATIN1", "RISCOS-LATIN1"},
+  # Phase 5: Non-ASCII non-EBCDIC
+  {"TCVN", "TCVN"},
 }
 
 struct EncodingData
@@ -150,9 +183,11 @@ def probe_encoding(iconv_name : String) : EncodingData
     return data
   end
 
-  # Collect all unique codepoints from decode table
+  # Collect all unique codepoints from decode table + ASCII/Latin-1 range
   codepoints_seen = Set(UInt16).new
   data.decode_table.each { |cp| codepoints_seen << cp if cp != 0xFFFF_u16 }
+  # Always probe ASCII and Latin-1 range for encode (handles asymmetric mappings like TCVN)
+  (1_u16..0xFF_u16).each { |cp| codepoints_seen << cp }
 
   codepoints_seen.each do |cp|
     # Encode codepoint to UTF-8
@@ -173,8 +208,8 @@ def probe_encoding(iconv_name : String) : EncodingData
 
     if written == 1
       byte = output[0]
-      # Include all mappings where codepoint != byte (non-identity)
-      if cp.to_u16 != byte.to_u16
+      # Include mapping if it won't be created by decode table inversion
+      if cp.to_u16 != byte.to_u16 || data.decode_table[byte.to_i32] != cp.to_u16
         data.encode_pairs << {cp.to_u16, byte}
       end
     end
