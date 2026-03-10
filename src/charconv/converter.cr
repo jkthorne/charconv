@@ -362,7 +362,6 @@ class CharConv::Converter
       if ascii_len > 0
         avail = dst.size - dst_pos
         copy_len = Math.min(ascii_len, avail)
-        src.to_unsafe.copy_to(dst.to_unsafe + dst_pos, copy_len) if copy_len > 0
         (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, copy_len)
         src_pos += copy_len
         dst_pos += copy_len
@@ -529,7 +528,6 @@ class CharConv::Converter
           end
           break
         end
-        src_buf.move_to(src_buf) if consumed > 0
         (src_buf.to_unsafe + consumed).copy_to(src_buf.to_unsafe, remaining) if consumed > 0
       end
       src_len = remaining
