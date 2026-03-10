@@ -52,13 +52,21 @@ All benchmarks beat system iconv by 2.2x–136x:
 | UTF-8 → UTF-16LE       | 227 MB/s    | 105 MB/s    | 2.2x    |
 | UTF-8 → UTF-8          | 213 MB/s    | 90 MB/s     | 2.4x    |
 
-## Remaining Work
+## Completed: Phase C — CI/CD + Release Prep
 
-### Phase C: CI/CD + Release Prep (est. 0.5 day)
+### CI/CD (DONE)
 
-1. Add `.github/workflows/ci.yml` (crystal spec on push/PR, macOS + Linux matrix)
-2. Tag v0.1.0 release
-3. Publish to shards registry
+Added `.github/workflows/ci.yml`:
+- Test matrix: macOS + Ubuntu, Crystal latest + 1.19.1
+- Runs `crystal spec` on push to main and PRs
+- Benchmark job on main pushes (release mode, non-blocking)
+
+### Release
+
+To publish v0.1.0:
+1. Push to GitHub, verify CI passes
+2. `git tag v0.1.0 && git push --tags`
+3. Register on shards registry
 
 ## Architecture Reference
 
