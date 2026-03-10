@@ -15,6 +15,11 @@ module Iconvcr::Tables
       CP864 CP865 CP866 CP869
       CP874 TIS_620 VISCII ARMSCII_8 GEORGIAN_ACADEMY GEORGIAN_PS HP_ROMAN8
       NEXTSTEP PT154 KOI8_T
+      CP037 CP273 CP277 CP278 CP280 CP284 CP285 CP297
+      CP423 CP424 CP500 CP905 CP1026
+      CP856 CP922 CP853 CP1046 CP1124 CP1125 CP1129 CP1131
+      CP1133 CP1161 CP1162 CP1163 ATARIST KZ_1048 MULELAO_1 RISCOS_LATIN1
+      TCVN
     ] %}
       arr[EncodingID::{{ enc.id }}.value] = SingleByte::{{ enc.id }}_DECODE.to_unsafe
     {% end %}
@@ -36,6 +41,11 @@ module Iconvcr::Tables
       CP864 CP865 CP866 CP869
       CP874 TIS_620 VISCII ARMSCII_8 GEORGIAN_ACADEMY GEORGIAN_PS HP_ROMAN8
       NEXTSTEP PT154 KOI8_T
+      CP037 CP273 CP277 CP278 CP280 CP284 CP285 CP297
+      CP423 CP424 CP500 CP905 CP1026
+      CP856 CP922 CP853 CP1046 CP1124 CP1125 CP1129 CP1131
+      CP1133 CP1161 CP1162 CP1163 ATARIST KZ_1048 MULELAO_1 RISCOS_LATIN1
+      TCVN
     ] %}
       arr[EncodingID::{{ enc.id }}.value] = build_encode_table(SingleByte::{{ enc.id }}_DECODE, SingleByte::{{ enc.id }}_ENCODE_PAIRS)
     {% end %}
@@ -44,14 +54,12 @@ module Iconvcr::Tables
 
   private def self.build_encode_table(decode : StaticArray(UInt16, 256), pairs : Array({UInt16, UInt8})) : Pointer(UInt8)
     table = Pointer(UInt8).malloc(65536, 0_u8)
-    # ASCII identity: codepoints 1-127 → same byte value
-    (1_u16..0x7F_u16).each { |i| table[i] = i.to_u8 }
-    # Identity mappings for 0x80-0xFF where byte == codepoint
-    (0x80..0xFF).each do |b|
+    # Invert decode table: for each byte, set encode[codepoint] = byte
+    (0..255).each do |b|
       cp = decode[b]
-      table[cp] = b.to_u8 if cp == b.to_u16
+      table[cp] = b.to_u8 if cp != 0xFFFF_u16
     end
-    # Apply system iconv encode preferences last (overrides identity where different)
+    # Apply system iconv encode preferences (overrides where different)
     pairs.each { |cp, byte| table[cp] = byte }
     table
   end
