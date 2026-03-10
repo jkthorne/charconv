@@ -76,6 +76,21 @@ PAIRS = [
   {"UTF-8", "C99"},
   {"JAVA", "UTF-8"},
   {"UTF-8", "JAVA"},
+  # Phase 5: EBCDIC
+  {"CP037", "UTF-8"},
+  {"UTF-8", "CP037"},
+  {"CP500", "UTF-8"},
+  {"UTF-8", "CP500"},
+  # Phase 5: ASCII-superset
+  {"CP856", "UTF-8"},
+  {"UTF-8", "CP856"},
+  {"ATARIST", "UTF-8"},
+  {"UTF-8", "ATARIST"},
+  {"KZ-1048", "UTF-8"},
+  {"UTF-8", "KZ-1048"},
+  # Phase 5: Non-ASCII non-EBCDIC
+  {"TCVN", "UTF-8"},
+  {"UTF-8", "TCVN"},
 ]
 
 # Multi-byte source encodings that need input prepared via system iconv

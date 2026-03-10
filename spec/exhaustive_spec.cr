@@ -72,6 +72,18 @@ SINGLE_BYTE_ENCODINGS = [
   {"VISCII", false},
   {"ARMSCII-8", true}, {"GEORGIAN-ACADEMY", true}, {"GEORGIAN-PS", true},
   {"HP-ROMAN8", true}, {"NEXTSTEP", true}, {"PT154", true}, {"KOI8-T", true},
+  # Phase 5: EBCDIC (NOT ASCII supersets)
+  {"CP037", false}, {"CP273", false}, {"CP277", false}, {"CP278", false},
+  {"CP280", false}, {"CP284", false}, {"CP285", false}, {"CP297", false},
+  {"CP423", false}, {"CP424", false}, {"CP500", false}, {"CP905", false},
+  {"CP1026", false},
+  # Phase 5: ASCII-superset single-byte
+  {"CP856", true}, {"CP922", true}, {"CP853", true}, {"CP1046", true},
+  {"CP1124", true}, {"CP1125", true}, {"CP1129", true}, {"CP1131", true},
+  {"CP1133", true}, {"CP1161", true}, {"CP1162", true}, {"CP1163", true},
+  {"ATARIST", true}, {"KZ-1048", true}, {"MULELAO-1", true}, {"RISCOS-LATIN1", true},
+  # Phase 5: Non-ASCII non-EBCDIC
+  {"TCVN", false},
 ]
 
 describe "Exhaustive single-byte encoding correctness" do
