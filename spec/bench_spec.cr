@@ -108,6 +108,25 @@ describe "Benchmarks" do
       x.report("system iconv") { bench_system_iconv(utf8_data, "UTF-8", "UTF-8", out_4mb) }
     end
 
+    # Phase 2: single-byte encoding benchmarks
+    # CP1252 valid bytes (exclude undefined: 0x81, 0x8D, 0x8F, 0x90, 0x9D)
+    cp1252_valid = (0x00..0xFF).to_a.reject { |b| {0x81, 0x8D, 0x8F, 0x90, 0x9D}.includes?(b) }
+    cp1252_data = Bytes.new(SIZE) { |i| cp1252_valid[i % cp1252_valid.size].to_u8 }
+
+    puts "\n--- CP1252 → UTF-8 ---"
+    conv = Iconvcr::Converter.new("CP1252", "UTF-8")
+    Benchmark.ips do |x|
+      x.report("iconvcr") { conv.convert(cp1252_data, out_4mb) }
+      x.report("system iconv") { bench_system_iconv(cp1252_data, "CP1252", "UTF-8", out_4mb) }
+    end
+
+    puts "\n--- UTF-8 → CP1252 (mixed Latin ~80% ASCII) ---"
+    conv = Iconvcr::Converter.new("UTF-8", "CP1252")
+    Benchmark.ips do |x|
+      x.report("iconvcr") { conv.convert(mixed_latin, out_4mb) }
+      x.report("system iconv") { bench_system_iconv(mixed_latin, "UTF-8", "CP1252", out_4mb) }
+    end
+
     puts "\n" + "=" * 60
   end
 end
