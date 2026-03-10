@@ -162,8 +162,8 @@ describe Iconvcr::Converter do
     end
 
     it "raises ArgumentError for unknown target encoding" do
-      expect_raises(ArgumentError, "Unknown encoding: SHIFT_JIS") do
-        Iconvcr::Converter.new("UTF-8", "SHIFT_JIS")
+      expect_raises(ArgumentError, "Unknown encoding: FAKE_ENCODING_XYZ") do
+        Iconvcr::Converter.new("UTF-8", "FAKE_ENCODING_XYZ")
       end
     end
   end
