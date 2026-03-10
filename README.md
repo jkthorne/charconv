@@ -1,39 +1,135 @@
 # iconvcr
 
-TODO: Write a description here
+A pure Crystal implementation of GNU libiconv. Converts text between 150+ character
+encodings using Unicode (UCS-4) as a pivot, with performance-first design.
+
+## Features
+
+- **150+ encodings**: ASCII, UTF-8, UTF-16/32, ISO-8859-*, Windows codepages, Mac encodings,
+  CJK (Shift_JIS, EUC-JP, GBK, Big5, EUC-KR, GB18030, ...), EBCDIC, and more
+- **Fast**: 8-byte ASCII scanner with memcpy for ASCII-superset pairs, enum-based dispatch
+  compiling to jump tables, table-driven single-byte codecs, zero allocations in the hot path
+- **Correct**: Exhaustive byte-level tests against system iconv for every encoding
+- **Streaming**: Buffer-based API for zero-copy conversion, plus IO wrapper for convenience
+- **GNU iconv compatible**: Supports `//IGNORE`, `//TRANSLIT`, and combined flags
 
 ## Installation
 
-1. Add the dependency to your `shard.yml`:
+Add to your `shard.yml`:
 
-   ```yaml
-   dependencies:
-     iconvcr:
-       github: your-github-user/iconvcr
-   ```
-
-2. Run `shards install`
+```yaml
+dependencies:
+  iconvcr:
+    github: jackthorne/iconvcr
+```
 
 ## Usage
 
+### One-shot conversion
+
 ```crystal
 require "iconvcr"
+
+# String/Bytes → Bytes
+result = Iconvcr.convert("Hello, World!", "UTF-8", "ISO-8859-1")
+result = Iconvcr.convert(input_bytes, "Shift_JIS", "UTF-8")
+
+# With flags
+result = Iconvcr.convert(input, "UTF-8", "ASCII//TRANSLIT")   # transliterate
+result = Iconvcr.convert(input, "UTF-8", "ASCII//IGNORE")     # skip failures
 ```
 
-TODO: Write usage instructions here
+### Streaming (buffer-based)
+
+```crystal
+converter = Iconvcr::Converter.new("EUC-JP", "UTF-8")
+
+# You provide the buffers — zero allocations
+src_consumed, dst_written = converter.convert(input_bytes, output_bytes)
+# Call repeatedly until input is exhausted
+```
+
+### IO streaming
+
+```crystal
+File.open("input.txt", "r") do |input|
+  File.open("output.txt", "w") do |output|
+    Iconvcr.convert(input, output, "Shift_JIS", "UTF-8")
+  end
+end
+
+# Or with a Converter instance for more control
+converter = Iconvcr::Converter.new("GB18030", "UTF-8")
+converter.convert(input_io, output_io, buffer_size: 16384)
+```
+
+### Querying encodings
+
+```crystal
+Iconvcr.encoding_supported?("UTF-8")       # => true
+Iconvcr.encoding_supported?("NONEXISTENT") # => false
+Iconvcr.list_encodings                      # => ["ASCII", "UTF-8", ...]
+```
+
+## Supported Encodings
+
+**Unicode**: ASCII, UTF-8, UTF-16BE/LE/BOM, UTF-32BE/LE/BOM, UCS-2, UCS-4, UTF-7, C99, Java
+
+**Western European**: ISO-8859-1/15, CP1252, MacRoman, HP-ROMAN8, NEXTSTEP
+
+**Central/Eastern European**: ISO-8859-2/3/4/10/13/14/16, CP1250, MacCentralEurope
+
+**Cyrillic**: ISO-8859-5, CP1251, KOI8-R, KOI8-U, KOI8-RU, MacCyrillic, MacUkraine
+
+**Greek**: ISO-8859-7, CP1253, MacGreek
+
+**Turkish**: ISO-8859-9, CP1254, MacTurkish
+
+**Hebrew**: ISO-8859-8, CP1255, MacHebrew
+
+**Arabic**: ISO-8859-6, CP1256, MacArabic, CP864
+
+**Thai**: ISO-8859-11, TIS-620, CP874, MacThai
+
+**Vietnamese**: VISCII, TCVN, CP1258
+
+**Japanese**: EUC-JP, Shift_JIS, CP932, ISO-2022-JP, ISO-2022-JP-1, ISO-2022-JP-2
+
+**Chinese (Simplified)**: GB2312, GBK, GB18030, EUC-CN, HZ, ISO-2022-CN
+
+**Chinese (Traditional)**: Big5, CP950, Big5-HKSCS, EUC-TW
+
+**Korean**: EUC-KR, CP949, ISO-2022-KR, JOHAB
+
+**DOS/IBM**: CP437, CP737, CP775, CP850, CP852, CP855, CP857, CP858, CP860-CP866, CP869
+
+**EBCDIC**: CP037, CP273, CP277, CP278, CP280, CP284, CP285, CP297, CP423, CP424, CP500, CP905, CP1026
+
+**Other**: ARMSCII-8, Georgian-Academy, Georgian-PS, PT154, KOI8-T, KZ-1048, MULELAO-1, ATARIST, RISCOS-LATIN1
+
+## Architecture
+
+Every conversion goes through a Unicode pivot:
+
+```
+Source bytes → UCS-4 codepoint → Target bytes
+  decode()        (pivot)         encode()
+```
+
+For ASCII-superset encoding pairs (the vast majority), an 8-byte word scanner
+identifies ASCII runs and memcpys them directly, only falling back to the
+decode-pivot-encode loop for non-ASCII characters. This means ASCII-heavy text
+converts at memory bandwidth.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design rationale.
 
 ## Development
 
-TODO: Write development instructions here
+```sh
+crystal spec                        # run all tests
+crystal spec spec/bench_spec.cr --release  # run benchmarks
+```
 
-## Contributing
+## License
 
-1. Fork it (<https://github.com/your-github-user/iconvcr/fork>)
-2. Create your feature branch (`git checkout -b my-new-feature`)
-3. Commit your changes (`git commit -am 'Add some feature'`)
-4. Push to the branch (`git push origin my-new-feature`)
-5. Create a new Pull Request
-
-## Contributors
-
-- [Jack Thorne](https://github.com/your-github-user) - creator and maintainer
+[MIT](LICENSE)
