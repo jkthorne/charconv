@@ -30,6 +30,31 @@ module Iconvcr::Registry
     private {{ id.upcase.id }}_INFO = EncodingInfo.new(EncodingID::{{ id.id }}, false, 1_u8, false)
   {% end %}
 
+  # Phase 4: CJK stateless encodings (all ASCII supersets)
+  private EUC_JP_INFO     = EncodingInfo.new(EncodingID::EUC_JP, true, 3_u8, false)
+  private SHIFT_JIS_INFO  = EncodingInfo.new(EncodingID::SHIFT_JIS, false, 2_u8, false)  # 0x5C=¥, 0x7E=‾
+  private CP932_INFO      = EncodingInfo.new(EncodingID::CP932, false, 2_u8, false)       # same as Shift_JIS
+  private GBK_INFO        = EncodingInfo.new(EncodingID::GBK, true, 2_u8, false)
+  private GB2312_INFO     = EncodingInfo.new(EncodingID::GB2312, true, 2_u8, false)
+  private EUC_CN_INFO     = EncodingInfo.new(EncodingID::EUC_CN, true, 2_u8, false)
+  private GB18030_INFO    = EncodingInfo.new(EncodingID::GB18030, true, 4_u8, false)
+  private BIG5_INFO       = EncodingInfo.new(EncodingID::BIG5, true, 2_u8, false)
+  private CP950_INFO      = EncodingInfo.new(EncodingID::CP950, true, 2_u8, false)
+  private BIG5_HKSCS_INFO = EncodingInfo.new(EncodingID::BIG5_HKSCS, true, 2_u8, false)
+  private EUC_KR_INFO     = EncodingInfo.new(EncodingID::EUC_KR, true, 2_u8, false)
+  private CP949_INFO      = EncodingInfo.new(EncodingID::CP949, true, 2_u8, false)
+  private EUC_TW_INFO     = EncodingInfo.new(EncodingID::EUC_TW, true, 4_u8, false)
+  private JOHAB_INFO      = EncodingInfo.new(EncodingID::JOHAB, true, 2_u8, false)
+
+  # Phase 4: CJK stateful encodings (NOT ASCII supersets)
+  private ISO2022_JP_INFO    = EncodingInfo.new(EncodingID::ISO2022_JP, false, 8_u8, true)
+  private ISO2022_JP1_INFO   = EncodingInfo.new(EncodingID::ISO2022_JP1, false, 8_u8, true)
+  private ISO2022_JP2_INFO   = EncodingInfo.new(EncodingID::ISO2022_JP2, false, 8_u8, true)
+  private ISO2022_CN_INFO    = EncodingInfo.new(EncodingID::ISO2022_CN, false, 8_u8, true)
+  private ISO2022_CN_EXT_INFO = EncodingInfo.new(EncodingID::ISO2022_CN_EXT, false, 8_u8, true)
+  private ISO2022_KR_INFO    = EncodingInfo.new(EncodingID::ISO2022_KR, false, 8_u8, true)
+  private HZ_INFO            = EncodingInfo.new(EncodingID::HZ, false, 4_u8, true)
+
   # Phase 3: Unicode family encodings (none are ASCII supersets)
   private UTF16_BE_INFO  = EncodingInfo.new(EncodingID::UTF16_BE, false, 4_u8, false)
   private UTF16_LE_INFO  = EncodingInfo.new(EncodingID::UTF16_LE, false, 4_u8, false)
@@ -423,6 +448,76 @@ module Iconvcr::Registry
     "TCVN"      => TCVN_INFO,
     "TCVN5712"  => TCVN_INFO,
     "TCVN57121" => TCVN_INFO,
+
+    # Phase 4: CJK encodings — Japanese
+    "EUCJP"                                => EUC_JP_INFO,
+    "EXTENDEDUNIXCODEPACKEDFORMATFORJAPANESE" => EUC_JP_INFO,
+    "CSEUCPKDFMTJAPANESE"                  => EUC_JP_INFO,
+
+    "SHIFTJIS"     => SHIFT_JIS_INFO,
+    "SJIS"         => SHIFT_JIS_INFO,
+    "MSKANJI"      => SHIFT_JIS_INFO,
+    "CSSHIFTJIS"   => SHIFT_JIS_INFO,
+
+    "CP932"        => CP932_INFO,
+    "WINDOWS31J"   => CP932_INFO,
+
+    "ISO2022JP"    => ISO2022_JP_INFO,
+    "CSISO2022JP"  => ISO2022_JP_INFO,
+    "ISO2022JP1"   => ISO2022_JP1_INFO,
+    "ISO2022JP2"   => ISO2022_JP2_INFO,
+    "CSISO2022JP2" => ISO2022_JP2_INFO,
+
+    # Phase 4: CJK encodings — Chinese (Simplified)
+    "GB2312"       => GB2312_INFO,
+    "CSGB2312"     => GB2312_INFO,
+    "GB231280"     => GB2312_INFO,
+    "CHINESE"      => GB2312_INFO,
+    "ISOIR58"      => GB2312_INFO,
+    "CSISO58GB231280" => GB2312_INFO,
+
+    "GBK"          => GBK_INFO,
+    "CP936"        => GBK_INFO,
+    "MS936"        => GBK_INFO,
+    "WINDOWS936"   => GBK_INFO,
+
+    "GB18030"      => GB18030_INFO,
+
+    "EUCCN"        => EUC_CN_INFO,
+    "CNGB"         => EUC_CN_INFO,
+
+    "HZ"           => HZ_INFO,
+    "HZGB2312"     => HZ_INFO,
+
+    "ISO2022CN"    => ISO2022_CN_INFO,
+    "CSISO2022CN"  => ISO2022_CN_INFO,
+    "ISO2022CNEXT" => ISO2022_CN_EXT_INFO,
+
+    # Phase 4: CJK encodings — Chinese (Traditional)
+    "BIG5"         => BIG5_INFO,
+    "BIGFIVE"      => BIG5_INFO,
+    "CNBIG5"       => BIG5_INFO,
+    "CSBIG5"       => BIG5_INFO,
+
+    "CP950"        => CP950_INFO,
+
+    "BIG5HKSCS"    => BIG5_HKSCS_INFO,
+
+    "EUCTW"        => EUC_TW_INFO,
+    "CSEUCTW"      => EUC_TW_INFO,
+
+    # Phase 4: CJK encodings — Korean
+    "EUCKR"        => EUC_KR_INFO,
+    "CSEUCKR"      => EUC_KR_INFO,
+
+    "CP949"        => CP949_INFO,
+    "UHC"          => CP949_INFO,
+
+    "ISO2022KR"    => ISO2022_KR_INFO,
+    "CSISO2022KR"  => ISO2022_KR_INFO,
+
+    "JOHAB"        => JOHAB_INFO,
+    "CP1361"       => JOHAB_INFO,
   }
 
   CANONICAL_NAMES = [
@@ -450,6 +545,13 @@ module Iconvcr::Registry
     "CP856", "CP922", "CP853", "CP1046", "CP1124", "CP1125", "CP1129", "CP1131",
     "CP1133", "CP1161", "CP1162", "CP1163", "ATARIST", "KZ-1048", "MULELAO-1",
     "RISCOS-LATIN1", "TCVN",
+    # Phase 4: CJK
+    "EUC-JP", "Shift_JIS", "CP932",
+    "ISO-2022-JP", "ISO-2022-JP-1", "ISO-2022-JP-2",
+    "GB2312", "GBK", "GB18030", "EUC-CN", "HZ",
+    "ISO-2022-CN", "ISO-2022-CN-EXT",
+    "Big5", "CP950", "Big5-HKSCS", "EUC-TW",
+    "EUC-KR", "CP949", "ISO-2022-KR", "JOHAB",
   ]
 
   def self.normalize(name : String) : String
