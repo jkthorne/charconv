@@ -436,7 +436,11 @@ class CharConv::Converter
   # Like convert but returns a status code indicating why conversion stopped.
   # Used by the stdlib iconv bridge to set errno correctly.
   def convert_with_status(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
-    if @from.id.cp1252? && @to.id.utf8?
+    if @from.id.iso_8859_1? && @to.id.utf8?
+      convert_iso8859_1_to_utf8(src, dst)
+    elsif @from.id.utf8? && @to.id.iso_8859_1?
+      convert_utf8_to_iso8859_1(src, dst)
+    elsif @from.id.cp1252? && @to.id.utf8?
       convert_cp1252_to_utf8(src, dst)
     elsif @from.id.utf8? && @to.id.cp1252?
       convert_utf8_to_cp1252(src, dst)
@@ -535,6 +539,173 @@ class CharConv::Converter
     @state_decode.reset
     @state_encode.reset
     init_codec_modes
+  end
+
+  # ISO-8859-1 → UTF-8 fast path: pure bit math, no tables needed.
+  # Every byte 0x80-0xFF maps to U+0080-U+00FF → 2-byte UTF-8.
+  private def convert_iso8859_1_to_utf8(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+    src_pos = 0
+    dst_pos = 0
+
+    while src_pos < src.size
+      ascii_len = scan_ascii_run(src, src_pos)
+      if ascii_len > 0
+        avail = dst.size - dst_pos
+        copy_len = Math.min(ascii_len, avail)
+        (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, copy_len)
+        src_pos += copy_len
+        dst_pos += copy_len
+        return {src_pos, dst_pos, ConvertStatus::E2BIG} if copy_len < ascii_len
+        next
+      end
+
+      # Batch non-ASCII: all bytes 0x80-0xFF → 2-byte UTF-8 via bit math
+      while src_pos < src.size
+        byte = src.unsafe_fetch(src_pos)
+        break if byte < 0x80_u8
+        return {src_pos, dst_pos, ConvertStatus::E2BIG} if dst.size - dst_pos < 2
+        ptr = dst.to_unsafe + dst_pos
+        ptr[0] = (0xC0_u8 | (byte >> 6))
+        ptr[1] = (0x80_u8 | (byte & 0x3F_u8))
+        src_pos += 1
+        dst_pos += 2
+      end
+    end
+
+    {src_pos, dst_pos, ConvertStatus::OK}
+  end
+
+  # UTF-8 → ISO-8859-1 fast path: only U+0000-U+00FF are representable.
+  private def convert_utf8_to_iso8859_1(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+    src_pos = 0
+    dst_pos = 0
+
+    while src_pos < src.size
+      ascii_len = scan_ascii_run(src, src_pos)
+      if ascii_len > 0
+        avail = dst.size - dst_pos
+        copy_len = Math.min(ascii_len, avail)
+        (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, copy_len)
+        src_pos += copy_len
+        dst_pos += copy_len
+        return {src_pos, dst_pos, ConvertStatus::E2BIG} if copy_len < ascii_len
+        next
+      end
+
+      return {src_pos, dst_pos, ConvertStatus::E2BIG} if dst_pos >= dst.size
+
+      b0 = src.unsafe_fetch(src_pos).to_u32
+
+      if b0 < 0xC2
+        if @flags.ignore?
+          src_pos += 1
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      if b0 < 0xE0 # 2-byte UTF-8 → U+0080..U+07FF
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 2
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        unless b1 & 0xC0 == 0x80
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
+        if cp <= 0xFF
+          dst.to_unsafe[dst_pos] = cp.to_u8
+          src_pos += 2
+          dst_pos += 1
+          next
+        end
+        if @flags.translit?
+          t = transliterate(cp, dst, dst_pos)
+          if t > 0
+            src_pos += 2
+            dst_pos += t
+            next
+          end
+        end
+        if @flags.ignore?
+          src_pos += 2
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      if b0 < 0xF0 # 3-byte UTF-8
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 3
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        b2 = src.unsafe_fetch(src_pos + 2).to_u32
+        unless (b1 & 0xC0 == 0x80) && (b2 & 0xC0 == 0x80)
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
+        if cp < 0x0800 || (cp >= 0xD800 && cp <= 0xDFFF)
+          if @flags.ignore?
+            src_pos += 3
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        if @flags.translit?
+          t = transliterate(cp, dst, dst_pos)
+          if t > 0
+            src_pos += 3
+            dst_pos += t
+            next
+          end
+        end
+        if @flags.ignore?
+          src_pos += 3
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      if b0 <= 0xF4 # 4-byte UTF-8
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 4
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        b2 = src.unsafe_fetch(src_pos + 2).to_u32
+        b3 = src.unsafe_fetch(src_pos + 3).to_u32
+        unless (b1 & 0xC0 == 0x80) && (b2 & 0xC0 == 0x80) && (b3 & 0xC0 == 0x80)
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F)
+        if @flags.translit?
+          t = transliterate(cp, dst, dst_pos)
+          if t > 0
+            src_pos += 4
+            dst_pos += t
+            next
+          end
+        end
+        if @flags.ignore?
+          src_pos += 4
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      if @flags.ignore?
+        src_pos += 1
+        next
+      end
+      return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+    end
+
+    {src_pos, dst_pos, ConvertStatus::OK}
   end
 
   # Precomputed CP1252 byte (0x80-0xFF) → UTF-8 bytes table.
