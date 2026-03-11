@@ -107,6 +107,30 @@ CharConv.list_encodings                      # => ["ASCII", "UTF-8", ...]
 
 **Other**: ARMSCII-8, Georgian-Academy, Georgian-PS, PT154, KOI8-T, KZ-1048, MULELAO-1, ATARIST, RISCOS-LATIN1
 
+## Replacing libiconv in Crystal's stdlib
+
+charconv can transparently replace Crystal's libiconv dependency for all stdlib
+encoding operations (`String#encode`, `String.new(bytes, encoding)`, `IO#set_encoding`).
+
+```crystal
+require "charconv/stdlib"
+
+# All stdlib encoding now uses charconv — no libiconv calls at runtime
+"café".encode("ISO-8859-1")
+String.new(bytes, "Shift_JIS")
+
+io = File.open("data.txt")
+io.set_encoding("EUC-JP")
+io.gets_to_end  # decoded through charconv
+```
+
+By default, libiconv is still linked but never called. To fully remove the libiconv
+dependency, compile with `-Dwithout_iconv`:
+
+```sh
+crystal build app.cr -Dwithout_iconv
+```
+
 ## Architecture
 
 Every conversion goes through a Unicode pivot:
