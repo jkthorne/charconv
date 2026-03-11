@@ -168,6 +168,97 @@ describe CharConv::Converter do
     end
   end
 
+  describe "convert_with_status" do
+    it "returns OK when all input consumed" do
+      c = CharConv::Converter.new("UTF-8", "ISO-8859-1")
+      src = "Hello".to_slice
+      dst = Bytes.new(16)
+      consumed, written, status = c.convert_with_status(src, dst)
+      status.should eq CharConv::ConvertStatus::OK
+      consumed.should eq 5
+      written.should eq 5
+    end
+
+    it "returns E2BIG when output buffer is full" do
+      c = CharConv::Converter.new("ISO-8859-1", "UTF-8")
+      src = Bytes[0xE9] # é → 2-byte UTF-8, but only 1 byte output
+      dst = Bytes.new(1)
+      consumed, written, status = c.convert_with_status(src, dst)
+      status.should eq CharConv::ConvertStatus::E2BIG
+      consumed.should eq 0
+      written.should eq 0
+    end
+
+    it "returns E2BIG when ASCII copy exceeds output" do
+      c = CharConv::Converter.new("ASCII", "ASCII")
+      src = "Hello World".to_slice
+      dst = Bytes.new(5) # only room for 5 bytes
+      consumed, written, status = c.convert_with_status(src, dst)
+      status.should eq CharConv::ConvertStatus::E2BIG
+      consumed.should eq 5
+      written.should eq 5
+    end
+
+    it "returns EILSEQ on invalid byte" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      src = Bytes[0x48, 0x69, 0xFF] # "Hi" + invalid
+      dst = Bytes.new(16)
+      consumed, written, status = c.convert_with_status(src, dst)
+      status.should eq CharConv::ConvertStatus::EILSEQ
+      consumed.should eq 2
+      written.should eq 2
+    end
+
+    it "returns EINVAL on incomplete sequence" do
+      c = CharConv::Converter.new("UTF-8", "ISO-8859-1")
+      src = Bytes[0xC3] # incomplete 2-byte UTF-8
+      dst = Bytes.new(16)
+      consumed, written, status = c.convert_with_status(src, dst)
+      status.should eq CharConv::ConvertStatus::EINVAL
+      consumed.should eq 0
+      written.should eq 0
+    end
+
+    it "returns EILSEQ on unencodable codepoint" do
+      c = CharConv::Converter.new("UTF-8", "ASCII")
+      src = "café".to_slice # é not encodable in ASCII
+      dst = Bytes.new(16)
+      consumed, written, status = c.convert_with_status(src, dst)
+      status.should eq CharConv::ConvertStatus::EILSEQ
+      consumed.should eq 3 # "caf" consumed, stopped at é
+      written.should eq 3
+    end
+
+    it "returns OK with IGNORE flag on invalid bytes" do
+      c = CharConv::Converter.new("UTF-8", "ASCII//IGNORE")
+      src = "café".to_slice
+      dst = Bytes.new(16)
+      consumed, written, status = c.convert_with_status(src, dst)
+      status.should eq CharConv::ConvertStatus::OK
+      consumed.should eq src.size
+      written.should eq 3 # "caf"
+      dst[0, written].should eq "caf".to_slice
+    end
+
+    it "returns OK on empty input" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      consumed, written, status = c.convert_with_status(Bytes.empty, Bytes.new(16))
+      status.should eq CharConv::ConvertStatus::OK
+      consumed.should eq 0
+      written.should eq 0
+    end
+
+    it "returns correct status for non-ASCII-superset (general path)" do
+      c = CharConv::Converter.new("UTF-8", "UTF-16BE")
+      src = "Hi".to_slice
+      dst = Bytes.new(2) # only room for 1 UTF-16 char
+      consumed, written, status = c.convert_with_status(src, dst)
+      status.should eq CharConv::ConvertStatus::E2BIG
+      consumed.should eq 1
+      written.should eq 2
+    end
+  end
+
   describe "one-shot API" do
     it "returns correct Bytes for UTF-8 to ISO-8859-1" do
       c = CharConv::Converter.new("UTF-8", "ISO-8859-1")
