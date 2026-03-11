@@ -285,28 +285,37 @@ different encoding name.
 | `converter.cr` | The conversion loop, ASCII scanner, buffer management |
 | `decode.cr` | The decode dispatch switch + all non-trivial decode functions |
 | `encode.cr` | The encode dispatch switch + all non-trivial encode functions |
-| `registry.cr` | Name normalization, alias resolution → EncodingID |
-| `types.cr` | Result structs, EncodingID enum, CodecState |
-| `tables/single_byte.cr` | All 50 single-byte tables. It's data. One file. |
-| `tables/cjk_jis.cr` | JIS tables. Big, so separate from other CJK. |
-| `tables/cjk_gb.cr` | GB tables. |
-| `tables/cjk_big5.cr` | Big5/CNS tables. |
-| `tables/cjk_ksc.cr` | KSC tables. |
-| `tables/ebcdic.cr` | All EBCDIC tables. Data. One file. |
-| `codecs/utf8.cr` | Variable-length decoding, validation logic |
-| `codecs/utf16.cr` | BOM detection, surrogate pairs, byte order |
-| `codecs/utf32.cr` | BOM detection, byte order |
+| `registry.cr` | Name normalization, 550+ alias resolution → EncodingID |
+| `types.cr` | Result structs, EncodingID enum (189 values), CodecState, ConversionFlags, ConvertStatus |
+| `stdlib.cr` | Crystal stdlib bridge — monkey-patches `Crystal::Iconv` for drop-in replacement |
+| `tables/single_byte.cr` | All 64 single-byte decode/encode tables (auto-generated from system iconv) |
+| `tables/table_index.cr` | Decode/encode table registry — maps EncodingID to table pointers |
+| `tables/cjk_jis.cr` | EUC-JP, Shift_JIS, CP932 tables (~8K lines) |
+| `tables/cjk_gb.cr` | GBK, GB2312, EUC-CN tables (~8K lines) |
+| `tables/cjk_big5.cr` | Big5, CP950, Big5-HKSCS tables (~13K lines) |
+| `tables/cjk_ksc.cr` | EUC-KR, CP949, JOHAB tables (~11K lines) |
+| `tables/cjk_euctw.cr` | EUC-TW tables (~1.7K lines) |
+| `tables/gb18030_ranges.cr` | GB18030 BMP + supplementary range mappings (binary search) |
+| `codecs/utf16.cr` | BOM detection, surrogate pairs, byte order, UCS-2 variants |
+| `codecs/utf32.cr` | BOM detection, byte order, UCS-4 variants |
 | `codecs/utf7.cr` | Stateful base64 codec — unique state machine |
+| `codecs/c99.cr` | C99 (\u, \U) and Java escape codecs |
+| `codecs/cjk.cr` | All stateless CJK decode/encode (shared 2D table logic) |
 | `codecs/gb18030.cr` | Algorithmic 4-byte ranges — unique logic |
-| `codecs/iso2022_jp.cr` | Escape-sequence state machine |
-| `codecs/iso2022_cn.cr` | Escape-sequence state machine |
+| `codecs/iso2022_jp.cr` | Escape-sequence state machine (JP, JP-1, JP-2) |
+| `codecs/iso2022_cn.cr` | Escape-sequence state machine (CN, CN-EXT) |
 | `codecs/iso2022_kr.cr` | Escape-sequence state machine |
 | `codecs/hz.cr` | ~{...~} framing state machine |
-| `transliteration.cr` | Fallback mapping tables for //TRANSLIT |
+| `transliteration.cr` | 645-entry fallback mapping table for //TRANSLIT (max 4 codepoints per replacement) |
 
-**~20 files.** Each one exists for a reason. If two encodings use the same logic
+**~25 files.** Each one exists for a reason. If two encodings use the same logic
 with different data, they don't get separate files — they share a function and
 have separate table entries.
+
+Note: There is no separate `codecs/utf8.cr` — UTF-8 decode/encode lives directly
+in `decode.cr`/`encode.cr` since it's small enough not to warrant its own file.
+Similarly, there is no `tables/ebcdic.cr` — EBCDIC encodings are handled as
+single-byte table entries in `tables/single_byte.cr`.
 
 ### Performance Expectations
 
