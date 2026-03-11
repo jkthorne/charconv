@@ -51,6 +51,10 @@ CharConv.convert(input, "UTF-8", "ISO-8859-1")
 converter = CharConv::Converter.new("EUC-JP", "UTF-8")
 src_consumed, dst_written = converter.convert(input_bytes, output_bytes)
 
+# Streaming with iconv-compatible status
+src_consumed, dst_written, status = converter.convert_with_status(input_bytes, output_bytes)
+# status: ConvertStatus::OK | E2BIG | EILSEQ | EINVAL
+
 # Flags
 CharConv.convert(input, "UTF-8", "ASCII//TRANSLIT")   # transliterate
 CharConv.convert(input, "UTF-8", "ASCII//IGNORE")     # skip failures
