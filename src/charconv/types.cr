@@ -200,6 +200,13 @@ module CharConv
 
   # Per-codec mutable state. Unused in Phase 1 (stateless encodings only)
   # but establishes the struct layout for future stateful codecs.
+  enum ConvertStatus
+    OK     # All input consumed
+    E2BIG  # Output buffer full
+    EILSEQ # Invalid byte sequence in input
+    EINVAL # Incomplete multibyte sequence at end of input
+  end
+
   @[Flags]
   enum ConversionFlags : UInt8
     Ignore   = 1 # //IGNORE — skip bad input bytes & unencodable chars
