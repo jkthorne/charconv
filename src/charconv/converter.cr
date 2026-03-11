@@ -4,6 +4,7 @@ class CharConv::Converter
   getter flags : ConversionFlags
   @decode_table : Pointer(UInt16)
   @encode_table : Pointer(UInt8)
+  @sb_to_utf8_table : Pointer(UInt32)
 
   def initialize(from_encoding : String, to_encoding : String)
     @from = Registry.lookup(from_encoding) || raise ArgumentError.new("Unknown encoding: #{from_encoding}")
@@ -13,6 +14,7 @@ class CharConv::Converter
     @state_encode = CodecState.new
     @decode_table = Tables::DECODE_TABLES[@from.id.value]
     @encode_table = Tables::ENCODE_TABLES[@to.id.value]
+    @sb_to_utf8_table = Tables::SINGLEBYTE_TO_UTF8_TABLES[@from.id.value]
     init_codec_modes
   end
 
@@ -440,10 +442,10 @@ class CharConv::Converter
       convert_iso8859_1_to_utf8(src, dst)
     elsif @from.id.utf8? && @to.id.iso_8859_1?
       convert_utf8_to_iso8859_1(src, dst)
-    elsif @from.id.cp1252? && @to.id.utf8?
-      convert_cp1252_to_utf8(src, dst)
-    elsif @from.id.utf8? && @to.id.cp1252?
-      convert_utf8_to_cp1252(src, dst)
+    elsif @to.id.utf8? && @from.ascii_superset && @from.max_bytes_per_char == 1 && !@sb_to_utf8_table.null?
+      convert_singlebyte_to_utf8(src, dst)
+    elsif @from.id.utf8? && @to.ascii_superset && @to.max_bytes_per_char == 1 && !@encode_table.null?
+      convert_utf8_to_singlebyte(src, dst)
     elsif @from.ascii_superset && @to.ascii_superset
       convert_ascii_fast(src, dst)
     else
@@ -621,6 +623,7 @@ class CharConv::Converter
           dst_pos += 1
           next
         end
+        # cp > 0xFF: not representable
         if @flags.translit?
           t = transliterate(cp, dst, dst_pos)
           if t > 0
@@ -636,7 +639,8 @@ class CharConv::Converter
         return {src_pos, dst_pos, ConvertStatus::EILSEQ}
       end
 
-      if b0 < 0xF0 # 3-byte UTF-8
+      # 3-byte and 4-byte: decode fully for TRANSLIT support, never directly representable
+      if b0 < 0xF0
         return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 3
         b1 = src.unsafe_fetch(src_pos + 1).to_u32
         b2 = src.unsafe_fetch(src_pos + 2).to_u32
@@ -670,7 +674,7 @@ class CharConv::Converter
         return {src_pos, dst_pos, ConvertStatus::EILSEQ}
       end
 
-      if b0 <= 0xF4 # 4-byte UTF-8
+      if b0 <= 0xF4
         return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 4
         b1 = src.unsafe_fetch(src_pos + 1).to_u32
         b2 = src.unsafe_fetch(src_pos + 2).to_u32
@@ -708,31 +712,10 @@ class CharConv::Converter
     {src_pos, dst_pos, ConvertStatus::OK}
   end
 
-  # Precomputed CP1252 byte (0x80-0xFF) → UTF-8 bytes table.
-  # Packed as UInt32: [len:8][b2:8][b1:8][b0:8]. len=0 means undefined.
-  CP1252_TO_UTF8 = begin
-    table = StaticArray(UInt32, 128).new(0_u32)
-    128.times do |i|
-      cp = Tables::SingleByte::CP1252_DECODE[i + 128].to_u32
-      next if cp == 0xFFFF_u32
-      if cp < 0x80_u32
-        table[i] = cp | (1_u32 << 24)
-      elsif cp < 0x800_u32
-        b0 = 0xC0_u32 | (cp >> 6)
-        b1 = 0x80_u32 | (cp & 0x3F_u32)
-        table[i] = b0 | (b1 << 8) | (2_u32 << 24)
-      else
-        b0 = 0xE0_u32 | (cp >> 12)
-        b1 = 0x80_u32 | ((cp >> 6) & 0x3F_u32)
-        b2 = 0x80_u32 | (cp & 0x3F_u32)
-        table[i] = b0 | (b1 << 8) | (b2 << 16) | (3_u32 << 24)
-      end
-    end
-    table
-  end
-
-  # CP1252 → UTF-8 fast path: skip UCS-4 pivot, use precomputed byte expansion.
-  private def convert_cp1252_to_utf8(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+  # Generic single-byte ASCII-superset → UTF-8 fast path.
+  # Uses precomputed packed UTF-8 table, batches consecutive non-ASCII bytes.
+  private def convert_singlebyte_to_utf8(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+    table = @sb_to_utf8_table
     src_pos = 0
     dst_pos = 0
 
@@ -748,70 +731,41 @@ class CharConv::Converter
         next
       end
 
-      byte = src.unsafe_fetch(src_pos)
-      packed = CP1252_TO_UTF8[byte.to_i32 - 128]
-      len = (packed >> 24).to_i32
+      # Batch non-ASCII bytes: tight inner loop avoids re-entering ASCII scanner
+      while src_pos < src.size
+        byte = src.unsafe_fetch(src_pos)
+        break if byte < 0x80_u8
 
-      if len == 0
-        if @flags.ignore?
-          src_pos += 1
-          next
+        packed = table[byte.to_i32 - 128]
+        len = (packed >> 24).to_i32
+
+        if len == 0
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
         end
-        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+
+        return {src_pos, dst_pos, ConvertStatus::E2BIG} if dst.size - dst_pos < len
+
+        ptr = dst.to_unsafe + dst_pos
+        ptr[0] = (packed & 0xFF).to_u8
+        ptr[1] = ((packed >> 8) & 0xFF).to_u8 if len >= 2
+        ptr[2] = ((packed >> 16) & 0xFF).to_u8 if len >= 3
+
+        src_pos += 1
+        dst_pos += len
       end
-
-      remaining = dst.size - dst_pos
-      return {src_pos, dst_pos, ConvertStatus::E2BIG} if remaining < len
-
-      ptr = dst.to_unsafe + dst_pos
-      ptr[0] = (packed & 0xFF).to_u8
-      ptr[1] = ((packed >> 8) & 0xFF).to_u8 if len >= 2
-      ptr[2] = ((packed >> 16) & 0xFF).to_u8 if len >= 3
-
-      src_pos += 1
-      dst_pos += len
     end
 
     {src_pos, dst_pos, ConvertStatus::OK}
   end
 
-  # Reverse lookup: Unicode codepoint → CP1252 byte for the 27 special mappings.
-  @[AlwaysInline]
-  private def utf8_cp_to_cp1252(cp : UInt32) : UInt8
-    case cp
-    when 0x20AC then 0x80_u8
-    when 0x201A then 0x82_u8
-    when 0x0192 then 0x83_u8
-    when 0x201E then 0x84_u8
-    when 0x2026 then 0x85_u8
-    when 0x2020 then 0x86_u8
-    when 0x2021 then 0x87_u8
-    when 0x02C6 then 0x88_u8
-    when 0x2030 then 0x89_u8
-    when 0x0160 then 0x8A_u8
-    when 0x2039 then 0x8B_u8
-    when 0x0152 then 0x8C_u8
-    when 0x017D then 0x8E_u8
-    when 0x2018 then 0x91_u8
-    when 0x2019 then 0x92_u8
-    when 0x201C then 0x93_u8
-    when 0x201D then 0x94_u8
-    when 0x2022 then 0x95_u8
-    when 0x2013 then 0x96_u8
-    when 0x2014 then 0x97_u8
-    when 0x02DC then 0x98_u8
-    when 0x2122 then 0x99_u8
-    when 0x0161 then 0x9A_u8
-    when 0x203A then 0x9B_u8
-    when 0x0153 then 0x9C_u8
-    when 0x017E then 0x9E_u8
-    when 0x0178 then 0x9F_u8
-    else              0_u8
-    end
-  end
-
-  # UTF-8 → CP1252 fast path: inline UTF-8 decode + direct/switch CP1252 encode.
-  private def convert_utf8_to_cp1252(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+  # Generic UTF-8 → single-byte ASCII-superset fast path.
+  # Inline UTF-8 decode + direct 64KB encode table lookup.
+  private def convert_utf8_to_singlebyte(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+    enc_table = @encode_table
     src_pos = 0
     dst_pos = 0
 
@@ -831,7 +785,7 @@ class CharConv::Converter
 
       b0 = src.unsafe_fetch(src_pos).to_u32
 
-      if b0 < 0xC2 # Continuation byte or overlong 2-byte
+      if b0 < 0xC2
         if @flags.ignore?
           src_pos += 1
           next
@@ -839,7 +793,7 @@ class CharConv::Converter
         return {src_pos, dst_pos, ConvertStatus::EILSEQ}
       end
 
-      if b0 < 0xE0 # 2-byte UTF-8 → U+0080..U+07FF
+      if b0 < 0xE0 # 2-byte UTF-8
         return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 2
         b1 = src.unsafe_fetch(src_pos + 1).to_u32
         unless b1 & 0xC0 == 0x80
@@ -850,25 +804,13 @@ class CharConv::Converter
           return {src_pos, dst_pos, ConvertStatus::EILSEQ}
         end
         cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
-
-        # U+00A0..U+00FF → identity (same as Latin-1 portion of CP1252)
-        if cp >= 0xA0 && cp <= 0xFF
-          dst.to_unsafe[dst_pos] = cp.to_u8
-          src_pos += 2
-          dst_pos += 1
-          next
-        end
-
-        # Check the 27 special CP1252 mappings
-        byte = utf8_cp_to_cp1252(cp)
-        if byte > 0
+        byte = enc_table[cp]
+        if byte != 0 || cp == 0
           dst.to_unsafe[dst_pos] = byte
           src_pos += 2
           dst_pos += 1
           next
         end
-
-        # Not representable in CP1252
         if @flags.translit?
           t = transliterate(cp, dst, dst_pos)
           if t > 0
@@ -884,7 +826,7 @@ class CharConv::Converter
         return {src_pos, dst_pos, ConvertStatus::EILSEQ}
       end
 
-      if b0 < 0xF0 # 3-byte UTF-8 → U+0800..U+FFFF
+      if b0 < 0xF0 # 3-byte UTF-8
         return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 3
         b1 = src.unsafe_fetch(src_pos + 1).to_u32
         b2 = src.unsafe_fetch(src_pos + 2).to_u32
@@ -903,16 +845,13 @@ class CharConv::Converter
           end
           return {src_pos, dst_pos, ConvertStatus::EILSEQ}
         end
-
-        # Check the 27 special CP1252 mappings (€, smart quotes, etc.)
-        byte = utf8_cp_to_cp1252(cp)
-        if byte > 0
+        byte = enc_table[cp]
+        if byte != 0
           dst.to_unsafe[dst_pos] = byte
           src_pos += 3
           dst_pos += 1
           next
         end
-
         if @flags.translit?
           t = transliterate(cp, dst, dst_pos)
           if t > 0
@@ -928,7 +867,7 @@ class CharConv::Converter
         return {src_pos, dst_pos, ConvertStatus::EILSEQ}
       end
 
-      if b0 <= 0xF4 # 4-byte UTF-8 → never representable in CP1252
+      if b0 <= 0xF4 # 4-byte UTF-8 → never representable in single-byte
         return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 4
         b1 = src.unsafe_fetch(src_pos + 1).to_u32
         b2 = src.unsafe_fetch(src_pos + 2).to_u32
@@ -956,7 +895,6 @@ class CharConv::Converter
         return {src_pos, dst_pos, ConvertStatus::EILSEQ}
       end
 
-      # Invalid lead byte > 0xF4
       if @flags.ignore?
         src_pos += 1
         next
