@@ -112,6 +112,8 @@ class CharConv::Converter
   end
 
   # Scans a run of ASCII bytes using 8-byte word reads.
+  # Note: the UInt64 load may be unaligned since Bytes doesn't guarantee
+  # 8-byte alignment. This is safe on x86-64 and ARM64 (our target platforms).
   @[AlwaysInline]
   private def scan_ascii_run(src : Bytes, from : Int32) : Int32
     pos = from
