@@ -142,7 +142,7 @@ Two versions. One with the ASCII fast scanner (used when both encodings are ASCI
 supersets). One without (for EBCDIC, UTF-16, UTF-32, UTF-7).
 
 ```crystal
-def convert(src : Bytes, dst : Bytes) : {Int32, Int32}
+def convert_with_status(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
   if @from.ascii_superset && @to.ascii_superset
     convert_ascii_fast(src, dst)
   else
@@ -150,61 +150,65 @@ def convert(src : Bytes, dst : Bytes) : {Int32, Int32}
   end
 end
 
-private def convert_ascii_fast(src : Bytes, dst : Bytes) : {Int32, Int32}
+# ASCII scanner extracted as a separate inlined method
+@[AlwaysInline]
+private def scan_ascii_run(src : Bytes, pos : Int32) : Int32
+  run_end = pos
+  # 8 bytes at a time via unaligned UInt64 load (safe on x86-64 and ARM64)
+  while run_end + 8 <= src.size
+    word = (src.to_unsafe + run_end).as(Pointer(UInt64)).value
+    break if word & 0x8080808080808080_u64 != 0
+    run_end += 8
+  end
+  # Byte-at-a-time for trailing bytes
+  while run_end < src.size && src.to_unsafe[run_end] < 0x80
+    run_end += 1
+  end
+  run_end - pos  # returns length of ASCII run
+end
+
+private def convert_ascii_fast(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
   src_pos = 0
   dst_pos = 0
-  src_end = src.size
-  dst_end = dst.size
 
-  while src_pos < src_end
-    # Scan for ASCII run: 8 bytes at a time using word-at-a-time comparison
-    run_end = src_pos
-    while run_end + 8 <= src_end
-      word = (src.to_unsafe + run_end).as(Pointer(UInt64)).value
-      break if word & 0x8080808080808080_u64 != 0
-      run_end += 8
-    end
-    while run_end < src_end && src.to_unsafe[run_end] < 0x80
-      run_end += 1
-    end
-
-    # Copy ASCII run
-    run_len = run_end - src_pos
+  while src_pos < src.size
+    # Scan and copy ASCII run
+    run_len = scan_ascii_run(src, src_pos)
     if run_len > 0
-      avail = dst_end - dst_pos
+      avail = dst.size - dst_pos
       copy_len = run_len < avail ? run_len : avail
       (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, copy_len)
       src_pos += copy_len
       dst_pos += copy_len
-      next if copy_len < run_len  # output full
+      next if copy_len < run_len  # output full → E2BIG
     end
 
-    break if src_pos >= src_end
+    break if src_pos >= src.size
 
     # Decode/encode one non-ASCII character
     dr = decode_one(src, src_pos)
-    return {src_pos, dst_pos} if dr.status <= 0  # error
+    # ... handles ILSEQ/TOOFEW with Ignore/Translit flags
     er = encode_one(dr.codepoint, dst, dst_pos)
-    return {src_pos, dst_pos} if er.status <= 0  # error
+    # ... handles ILUNI with Translit fallback
     src_pos += dr.status
     dst_pos += er.status
   end
 
-  {src_pos, dst_pos}
+  {src_pos, dst_pos, ConvertStatus::OK}
 end
 
-private def convert_general(src : Bytes, dst : Bytes) : {Int32, Int32}
+private def convert_general(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
   src_pos = 0
   dst_pos = 0
+  # Handles BOM detection/emission for UTF-16/UTF-32 on first call
   while src_pos < src.size
     dr = decode_one(src, src_pos)
-    return {src_pos, dst_pos} if dr.status <= 0
+    # Stateful codecs may return codepoint 0 with status > 0 (escape sequences)
     er = encode_one(dr.codepoint, dst, dst_pos)
-    return {src_pos, dst_pos} if er.status <= 0
     src_pos += dr.status
     dst_pos += er.status
   end
-  {src_pos, dst_pos}
+  {src_pos, dst_pos, ConvertStatus::OK}
 end
 ```
 
