@@ -34,11 +34,12 @@ Every conversion goes through a Unicode pivot: `Source bytes → UCS-4 codepoint
 | `src/charconv/converter.cr` | Conversion loop, ASCII scanner, buffer management |
 | `src/charconv/decode.cr` | Decode dispatch + non-trivial decode functions |
 | `src/charconv/encode.cr` | Encode dispatch + non-trivial encode functions |
-| `src/charconv/registry.cr` | Name normalization, alias resolution → EncodingID |
-| `src/charconv/types.cr` | Result structs, EncodingID enum, CodecState |
-| `src/charconv/tables/` | Single-byte, CJK, and EBCDIC lookup tables |
-| `src/charconv/codecs/` | Complex codecs (UTF-8, UTF-16, GB18030, ISO-2022-*, etc.) |
-| `src/charconv/transliteration.cr` | //TRANSLIT fallback mappings |
+| `src/charconv/registry.cr` | Name normalization, 550+ alias resolution → EncodingID |
+| `src/charconv/types.cr` | Result structs, EncodingID enum (189 values), CodecState, ConversionFlags, ConvertStatus |
+| `src/charconv/stdlib.cr` | Crystal stdlib bridge — monkey-patches `Crystal::Iconv` for drop-in replacement |
+| `src/charconv/tables/` | Single-byte (64 encodings), CJK, and GB18030 lookup tables |
+| `src/charconv/codecs/` | Complex codecs (UTF-16, UTF-32, UTF-7, GB18030, ISO-2022-*, C99, etc.) |
+| `src/charconv/transliteration.cr` | 645-entry //TRANSLIT fallback mappings |
 
 ### API
 
