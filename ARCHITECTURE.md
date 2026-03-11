@@ -43,17 +43,34 @@ struct EncodeResult
   getter status : Int32
 end
 
+# Conversion flags parsed from //TRANSLIT and //IGNORE suffixes
+@[Flags]
+enum ConversionFlags : UInt8
+  Ignore  = 1  # Skip invalid input bytes and unencodable characters
+  Translit = 2  # Try fallback transliteration before giving up
+end
+
+# Status returned from the conversion loop (maps to errno values)
+enum ConvertStatus
+  OK      # All input consumed
+  E2BIG   # Output buffer full
+  EILSEQ  # Invalid byte sequence in input
+  EINVAL  # Incomplete multibyte sequence at end of input
+end
+
 # Encoding identity — an enum, not a string, not a Proc
+# 189 values total: 64 single-byte, 23 Unicode variants, 13 CJK stateless,
+# 8 CJK stateful, plus Mac encodings, EBCDIC, and special codecs (C99, JAVA)
 enum EncodingID : UInt16
   ASCII
   UTF8
   ISO_8859_1
   ISO_8859_2
-  # ... all encodings
-  SHIFT_JIS
-  EUC_JP
-  GB18030
-  # ...
+  # ... 64 single-byte ASCII-superset encodings
+  # ... Mac encodings (non-ASCII-superset single-byte)
+  # ... Unicode family (UTF-16 BE/LE, UTF-32 BE/LE, UCS-2/4 variants, UTF-7, C99, JAVA)
+  # ... CJK stateless (EUC-JP, Shift_JIS, CP932, GBK, GB18030, Big5, EUC-KR, etc.)
+  # ... CJK stateful (ISO-2022-JP/-JP1/-JP2, ISO-2022-CN/-CN-EXT, ISO-2022-KR, HZ)
 end
 
 # Metadata about an encoding, queried once at Converter creation
