@@ -13,6 +13,8 @@ crystal spec spec/cjk_spec.cr                    # CJK encoding tests
 crystal spec spec/unicode_spec.cr                # Unicode tests
 crystal spec spec/bench_spec.cr --release        # Benchmarks
 crystal spec spec/exhaustive_spec.cr             # Exhaustive byte-level tests vs system iconv
+crystal spec spec/stdlib_patch_spec.cr           # Stdlib bridge tests
+crystal spec spec/converter_spec.cr              # Converter + convert_with_status tests
 iconv -l                                         # List system iconv encodings (for comparison)
 ```
 
