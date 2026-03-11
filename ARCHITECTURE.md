@@ -252,9 +252,9 @@ Encode: encode_tables[encoding_id] → Pointer(StaticArray(UInt8, 65536))
   - Fits in L2 cache
   - You load at most 2 of these (from + to), so 128KB working set
 
-Total for 50 single-byte encodings:
-  Decode: 50 × 512B = 25KB (trivial)
-  Encode: 50 × 64KB = 3.2MB (loaded lazily, only 2 active at a time)
+Total for 64 single-byte encodings:
+  Decode: 64 × 512B = 32KB (trivial)
+  Encode: 64 × 64KB = 4MB (loaded lazily, only 2 active at a time)
 ```
 
 #### CJK
