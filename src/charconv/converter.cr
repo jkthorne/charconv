@@ -438,6 +438,8 @@ class CharConv::Converter
   def convert_with_status(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
     if @from.id.cp1252? && @to.id.utf8?
       convert_cp1252_to_utf8(src, dst)
+    elsif @from.id.utf8? && @to.id.cp1252?
+      convert_utf8_to_cp1252(src, dst)
     elsif @from.ascii_superset && @to.ascii_superset
       convert_ascii_fast(src, dst)
     else
@@ -597,6 +599,198 @@ class CharConv::Converter
 
       src_pos += 1
       dst_pos += len
+    end
+
+    {src_pos, dst_pos, ConvertStatus::OK}
+  end
+
+  # Reverse lookup: Unicode codepoint → CP1252 byte for the 27 special mappings.
+  @[AlwaysInline]
+  private def utf8_cp_to_cp1252(cp : UInt32) : UInt8
+    case cp
+    when 0x20AC then 0x80_u8
+    when 0x201A then 0x82_u8
+    when 0x0192 then 0x83_u8
+    when 0x201E then 0x84_u8
+    when 0x2026 then 0x85_u8
+    when 0x2020 then 0x86_u8
+    when 0x2021 then 0x87_u8
+    when 0x02C6 then 0x88_u8
+    when 0x2030 then 0x89_u8
+    when 0x0160 then 0x8A_u8
+    when 0x2039 then 0x8B_u8
+    when 0x0152 then 0x8C_u8
+    when 0x017D then 0x8E_u8
+    when 0x2018 then 0x91_u8
+    when 0x2019 then 0x92_u8
+    when 0x201C then 0x93_u8
+    when 0x201D then 0x94_u8
+    when 0x2022 then 0x95_u8
+    when 0x2013 then 0x96_u8
+    when 0x2014 then 0x97_u8
+    when 0x02DC then 0x98_u8
+    when 0x2122 then 0x99_u8
+    when 0x0161 then 0x9A_u8
+    when 0x203A then 0x9B_u8
+    when 0x0153 then 0x9C_u8
+    when 0x017E then 0x9E_u8
+    when 0x0178 then 0x9F_u8
+    else              0_u8
+    end
+  end
+
+  # UTF-8 → CP1252 fast path: inline UTF-8 decode + direct/switch CP1252 encode.
+  private def convert_utf8_to_cp1252(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+    src_pos = 0
+    dst_pos = 0
+
+    while src_pos < src.size
+      ascii_len = scan_ascii_run(src, src_pos)
+      if ascii_len > 0
+        avail = dst.size - dst_pos
+        copy_len = Math.min(ascii_len, avail)
+        (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, copy_len)
+        src_pos += copy_len
+        dst_pos += copy_len
+        return {src_pos, dst_pos, ConvertStatus::E2BIG} if copy_len < ascii_len
+        next
+      end
+
+      return {src_pos, dst_pos, ConvertStatus::E2BIG} if dst_pos >= dst.size
+
+      b0 = src.unsafe_fetch(src_pos).to_u32
+
+      if b0 < 0xC2 # Continuation byte or overlong 2-byte
+        if @flags.ignore?
+          src_pos += 1
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      if b0 < 0xE0 # 2-byte UTF-8 → U+0080..U+07FF
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 2
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        unless b1 & 0xC0 == 0x80
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
+
+        # U+00A0..U+00FF → identity (same as Latin-1 portion of CP1252)
+        if cp >= 0xA0 && cp <= 0xFF
+          dst.to_unsafe[dst_pos] = cp.to_u8
+          src_pos += 2
+          dst_pos += 1
+          next
+        end
+
+        # Check the 27 special CP1252 mappings
+        byte = utf8_cp_to_cp1252(cp)
+        if byte > 0
+          dst.to_unsafe[dst_pos] = byte
+          src_pos += 2
+          dst_pos += 1
+          next
+        end
+
+        # Not representable in CP1252
+        if @flags.translit?
+          t = transliterate(cp, dst, dst_pos)
+          if t > 0
+            src_pos += 2
+            dst_pos += t
+            next
+          end
+        end
+        if @flags.ignore?
+          src_pos += 2
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      if b0 < 0xF0 # 3-byte UTF-8 → U+0800..U+FFFF
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 3
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        b2 = src.unsafe_fetch(src_pos + 2).to_u32
+        unless (b1 & 0xC0 == 0x80) && (b2 & 0xC0 == 0x80)
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
+        if cp < 0x0800 || (cp >= 0xD800 && cp <= 0xDFFF)
+          if @flags.ignore?
+            src_pos += 3
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+
+        # Check the 27 special CP1252 mappings (€, smart quotes, etc.)
+        byte = utf8_cp_to_cp1252(cp)
+        if byte > 0
+          dst.to_unsafe[dst_pos] = byte
+          src_pos += 3
+          dst_pos += 1
+          next
+        end
+
+        if @flags.translit?
+          t = transliterate(cp, dst, dst_pos)
+          if t > 0
+            src_pos += 3
+            dst_pos += t
+            next
+          end
+        end
+        if @flags.ignore?
+          src_pos += 3
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      if b0 <= 0xF4 # 4-byte UTF-8 → never representable in CP1252
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 4
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        b2 = src.unsafe_fetch(src_pos + 2).to_u32
+        b3 = src.unsafe_fetch(src_pos + 3).to_u32
+        unless (b1 & 0xC0 == 0x80) && (b2 & 0xC0 == 0x80) && (b3 & 0xC0 == 0x80)
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F)
+        if @flags.translit?
+          t = transliterate(cp, dst, dst_pos)
+          if t > 0
+            src_pos += 4
+            dst_pos += t
+            next
+          end
+        end
+        if @flags.ignore?
+          src_pos += 4
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      # Invalid lead byte > 0xF4
+      if @flags.ignore?
+        src_pos += 1
+        next
+      end
+      return {src_pos, dst_pos, ConvertStatus::EILSEQ}
     end
 
     {src_pos, dst_pos, ConvertStatus::OK}
