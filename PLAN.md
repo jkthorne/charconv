@@ -3,13 +3,13 @@
 Pure Crystal implementation of GNU libiconv. 150+ character encodings,
 Unicode (UCS-4) pivot, performance-first design.
 
-**Status: Feature-complete. Cleanup before v0.1.0.**
+**Status: Ready for v0.1.0 release.**
 
 ## Current State
 
 - 558 tests, 0 failures
 - 150+ encodings (ASCII, Unicode, CJK, EBCDIC, Mac, DOS, etc.)
-- 2.2x–136x faster than system iconv
+- 2.2x-136x faster than system iconv
 - Streaming (buffer + IO), one-shot, and stdlib monkey-patch APIs
 - `//IGNORE`, `//TRANSLIT`, combined flag support
 - CI: macOS + Ubuntu, Crystal latest + 1.19.1
@@ -18,93 +18,31 @@ Unicode (UCS-4) pivot, performance-first design.
 
 | Operation              | charconv     | System iconv | Speedup |
 |------------------------|-------------|-------------|---------|
-| ASCII → ASCII          | 12.25 GB/s  | 90 MB/s     | 136x    |
-| ISO-8859-1 → UTF-8    | 580 MB/s    | 72 MB/s     | 8.0x    |
-| CP1252 → UTF-8         | 487 MB/s    | 60 MB/s     | 8.1x    |
-| UTF-16BE → UTF-8       | 291 MB/s    | 99 MB/s     | 2.9x    |
-| UTF-8 → ISO-8859-1    | 266 MB/s    | 72 MB/s     | 3.7x    |
-| UTF-8 → UTF-16LE       | 227 MB/s    | 105 MB/s    | 2.2x    |
-| UTF-8 → UTF-8          | 213 MB/s    | 90 MB/s     | 2.4x    |
+| ASCII -> ASCII          | 12.25 GB/s  | 90 MB/s     | 136x    |
+| ISO-8859-1 -> UTF-8    | 580 MB/s    | 72 MB/s     | 8.0x    |
+| CP1252 -> UTF-8         | 487 MB/s    | 60 MB/s     | 8.1x    |
+| UTF-16BE -> UTF-8       | 291 MB/s    | 99 MB/s     | 2.9x    |
+| UTF-8 -> ISO-8859-1    | 266 MB/s    | 72 MB/s     | 3.7x    |
+| UTF-8 -> UTF-16LE       | 227 MB/s    | 105 MB/s    | 2.2x    |
+| UTF-8 -> UTF-8          | 213 MB/s    | 90 MB/s     | 2.4x    |
 
 ---
 
-## What's Left: Pre-Release Cleanup
+## Completed: Pre-Release Cleanup
 
-### 1. Unify the four conversion loops → two
+All items done.
 
-**Problem:** `converter.cr` has four nearly-identical loops:
-- `convert_ascii_fast` (36 lines)
-- `convert_ascii_fast_status` (52 lines)
-- `convert_general` (41 lines)
-- `convert_general_status` (53 lines)
-
-The `_status` variants exist for the stdlib iconv bridge. They return
-`{Int32, Int32, ConvertStatus}` instead of `{Int32, Int32}`. The non-status
-variants use `handle_encode` (which returns a heap-checked `{Int32, Int32}?`)
-while the status variants inline the encode/translit/ignore logic directly.
-
-This is ~182 lines of conversion loop where ~100 are duplicated.
-
-**Fix:** Make the status-returning versions the single implementation.
-`convert(src, dst)` calls `convert_with_status` and discards the status.
-Delete `convert_ascii_fast`, `convert_general`, and `handle_encode`. This:
-- Cuts ~80 lines from the hottest file in the project
-- Eliminates the `{Int32, Int32}?` return from the per-character path
-- Makes one place to fix bugs in the conversion loop, not two
-
-The `_status` variants already inline the encode logic and are strictly
-more capable. No performance regression — the non-status versions were
-doing more work (tuple allocation + nil check) per character anyway.
-
-**Files:** `converter.cr`
-**Risk:** Low — exhaustive and comparison tests catch any regression.
-
-### 2. Kill string allocations in stdlib.cr constructor
-
-**Problem:** `Crystal::Iconv#initialize` does:
-```crystal
-clean_from = from.gsub("//IGNORE", "")       # allocates String
-original_from = clean_from.gsub(...)          # allocates again
-original_to = to.gsub(...)                    # allocates again
-```
-
-Three `gsub` allocations on every converter creation. Not hot-path, but
-sloppy — the stdlib path creates converters for every `String#encode`,
-`String.new(bytes, encoding)`, and `IO#set_encoding` call.
-
-**Fix:** Use `String#index("//")` and `String#byte_slice` to strip suffixes.
-Zero allocations for the common case (no `//` suffix present).
-
-**Files:** `stdlib.cr`
-**Risk:** None — stdlib_patch_spec covers this.
-
-### 3. Commit the stdlib patch
-
-**Problem:** `stdlib.cr` and `stdlib_patch_spec.cr` are untracked. The
-converter changes (adding `convert_with_status` and `ConvertStatus`) are
-staged but uncommitted.
-
-**Fix:** Commit the stdlib iconv bridge as a clean commit after the
-loop unification is done.
-
-**Files:** `stdlib.cr`, `stdlib_patch_spec.cr`, `converter.cr`, `types.cr`
-
-### 4. Document the unaligned load assumption
-
-**Problem:** `scan_ascii_run` casts `Pointer(UInt8)` to `Pointer(UInt64)`:
-```crystal
-word = (src.to_unsafe + pos).as(Pointer(UInt64)).value
-```
-
-`Bytes` doesn't guarantee 8-byte alignment. On ARM64 and x86-64 this
-works (hardware handles unaligned loads with at most a small penalty),
-but the assumption should be explicit.
-
-**Fix:** Add a one-line comment noting the unaligned access is intentional
-and safe on the target architectures (x86-64, ARM64).
-
-**Files:** `converter.cr`
-**Risk:** None.
+1. **Unify conversion loops** — Collapsed four loops (`convert_ascii_fast`,
+   `convert_ascii_fast_status`, `convert_general`, `convert_general_status`)
+   into two status-returning loops. `convert(src, dst)` delegates to
+   `convert_with_status` and discards the status. Removed `handle_encode`.
+2. **Kill string allocations in stdlib.cr** — Replaced `gsub` calls with
+   `String#index("//")` + `String#byte_slice`. Zero allocations for the
+   common case (no `//` suffix).
+3. **Commit stdlib patch** — `stdlib.cr` and `stdlib_patch_spec.cr` tracked
+   and committed.
+4. **Document unaligned load** — Comment added to `scan_ascii_run` noting
+   the intentional unaligned `UInt64` access on x86-64/ARM64.
 
 ---
 
