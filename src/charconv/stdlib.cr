@@ -20,12 +20,22 @@ require "../charconv"
 # Shared module with the charconv-backed iconv implementation.
 # Used by both the monkey-patch path and the without_iconv path.
 module CharConv::StdlibBridge
+  # Strip //IGNORE and //TRANSLIT suffixes from an encoding name.
+  # Returns the base encoding name without allocating when no suffix is present.
+  private def self.strip_flags(name : String) : String
+    if idx = name.index("//")
+      name[0, idx]
+    else
+      name
+    end
+  end
+
   # Create a CharConv::Converter from iconv-style encoding names.
   # Strips //IGNORE from `from` (charconv applies IGNORE from the `to` flags).
   # Returns {converter, skip_invalid}.
   def self.create_converter(from : String, to : String, invalid : Symbol? = nil) : {CharConv::Converter, Bool}
     skip_invalid = (invalid == :skip)
-    clean_from = from.gsub("//IGNORE", "")
+    clean_from = strip_flags(from)
 
     to_enc = to
     {% unless flag?(:freebsd) || flag?(:musl) || flag?(:dragonfly) || flag?(:netbsd) || flag?(:solaris) %}
@@ -34,8 +44,8 @@ module CharConv::StdlibBridge
       end
     {% end %}
 
-    original_from = clean_from.gsub("//IGNORE", "").gsub("//TRANSLIT", "")
-    original_to = to.gsub("//IGNORE", "").gsub("//TRANSLIT", "")
+    original_from = strip_flags(clean_from)
+    original_to = strip_flags(to)
 
     begin
       converter = CharConv::Converter.new(clean_from, to_enc)
