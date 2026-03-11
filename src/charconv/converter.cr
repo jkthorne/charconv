@@ -313,64 +313,8 @@ class CharConv::Converter
     nil # ILSEQ without IGNORE, or TOOFEW — stop
   end
 
-  # Encode a codepoint with translit/ignore fallback.
-  # Returns {src_advance, dst_advance}, or nil to stop.
-  private def handle_encode(dr : DecodeResult, dst : Bytes, dst_pos : Int32) : {Int32, Int32}?
-    er = encode_one(dr.codepoint, dst, dst_pos)
-    if er.status == -1 # ILUNI
-      if @flags.translit?
-        t = transliterate(dr.codepoint, dst, dst_pos)
-        return {dr.status, t} if t > 0
-      end
-      return {dr.status, 0} if @flags.ignore?
-      nil
-    elsif er.status == 0 # TOOSMALL
-      nil
-    else
-      {dr.status, er.status}
-    end
-  end
-
   # Fast path for conversions where both encodings are ASCII supersets.
-  private def convert_ascii_fast(src : Bytes, dst : Bytes) : {Int32, Int32}
-    src_pos = 0
-    dst_pos = 0
-
-    while src_pos < src.size
-      ascii_len = scan_ascii_run(src, src_pos)
-      if ascii_len > 0
-        avail = dst.size - dst_pos
-        copy_len = Math.min(ascii_len, avail)
-        (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, copy_len)
-        src_pos += copy_len
-        dst_pos += copy_len
-        break if copy_len < ascii_len
-        next
-      end
-
-      dr = decode_one(src, src_pos)
-      if dr.status <= 0
-        skip = handle_decode_error(dr.status)
-        if skip
-          src_pos += skip
-          next
-        end
-        return {src_pos, dst_pos}
-      end
-
-      result = handle_encode(dr, dst, dst_pos)
-      unless result
-        return {src_pos, dst_pos}
-      end
-      src_pos += result[0]
-      dst_pos += result[1]
-    end
-
-    {src_pos, dst_pos}
-  end
-
-  # Status-returning fast path for iconv compatibility.
-  private def convert_ascii_fast_status(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+  private def convert_ascii_fast(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
     src_pos = 0
     dst_pos = 0
 
@@ -424,7 +368,7 @@ class CharConv::Converter
   end
 
   # General character-at-a-time loop for non-ASCII-superset encodings.
-  private def convert_general(src : Bytes, dst : Bytes) : {Int32, Int32}
+  private def convert_general(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
     src_pos = 0
     dst_pos = 0
 
@@ -444,52 +388,13 @@ class CharConv::Converter
           src_pos += skip
           next
         end
-        return {src_pos, dst_pos}
+        status = dr.status == 0 ? ConvertStatus::EINVAL : ConvertStatus::EILSEQ
+        return {src_pos, dst_pos, status}
       end
 
       # Stateful codecs return codepoint 0 with status > 0 for escape sequences
       # (mode switches that consume bytes but produce no character).
       # Only skip for stateful encodings — stateless codecs decoding to U+0000 is a real NUL.
-      if dr.codepoint == 0 && dr.status > 0 && @from.stateful
-        src_pos += dr.status
-        next
-      end
-
-      result = handle_encode(dr, dst, dst_pos)
-      unless result
-        return {src_pos, dst_pos}
-      end
-      src_pos += result[0]
-      dst_pos += result[1]
-    end
-
-    {src_pos, dst_pos}
-  end
-
-  # Status-returning general loop for iconv compatibility.
-  private def convert_general_status(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
-    src_pos = 0
-    dst_pos = 0
-
-    if @state_decode.mode == 0_u8 && (@from.id.utf16? || @from.id.utf32? || @from.id.ucs2? || @from.id.ucs4?)
-      src_pos = consume_decode_bom(src)
-    end
-    if @state_encode.mode == 0_u8 && (@to.id.utf16? || @to.id.utf32? || @to.id.ucs2? || @to.id.ucs4?)
-      dst_pos = emit_encode_bom(dst)
-    end
-
-    while src_pos < src.size
-      dr = decode_one(src, src_pos)
-      if dr.status <= 0
-        skip = handle_decode_error(dr.status)
-        if skip
-          src_pos += skip
-          next
-        end
-        status = dr.status == 0 ? ConvertStatus::EINVAL : ConvertStatus::EILSEQ
-        return {src_pos, dst_pos, status}
-      end
-
       if dr.codepoint == 0 && dr.status > 0 && @from.stateful
         src_pos += dr.status
         next
@@ -522,20 +427,17 @@ class CharConv::Converter
   end
 
   def convert(src : Bytes, dst : Bytes) : {Int32, Int32}
-    if @from.ascii_superset && @to.ascii_superset
-      convert_ascii_fast(src, dst)
-    else
-      convert_general(src, dst)
-    end
+    consumed, written, _status = convert_with_status(src, dst)
+    {consumed, written}
   end
 
   # Like convert but returns a status code indicating why conversion stopped.
   # Used by the stdlib iconv bridge to set errno correctly.
   def convert_with_status(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
     if @from.ascii_superset && @to.ascii_superset
-      convert_ascii_fast_status(src, dst)
+      convert_ascii_fast(src, dst)
     else
-      convert_general_status(src, dst)
+      convert_general(src, dst)
     end
   end
 
