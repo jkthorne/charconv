@@ -436,7 +436,9 @@ class CharConv::Converter
   # Like convert but returns a status code indicating why conversion stopped.
   # Used by the stdlib iconv bridge to set errno correctly.
   def convert_with_status(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
-    if @from.ascii_superset && @to.ascii_superset
+    if @from.id.cp1252? && @to.id.utf8?
+      convert_cp1252_to_utf8(src, dst)
+    elsif @from.ascii_superset && @to.ascii_superset
       convert_ascii_fast(src, dst)
     else
       convert_general(src, dst)
@@ -531,5 +533,72 @@ class CharConv::Converter
     @state_decode.reset
     @state_encode.reset
     init_codec_modes
+  end
+
+  # Precomputed CP1252 byte (0x80-0xFF) → UTF-8 bytes table.
+  # Packed as UInt32: [len:8][b2:8][b1:8][b0:8]. len=0 means undefined.
+  CP1252_TO_UTF8 = begin
+    table = StaticArray(UInt32, 128).new(0_u32)
+    128.times do |i|
+      cp = Tables::SingleByte::CP1252_DECODE[i + 128].to_u32
+      next if cp == 0xFFFF_u32
+      if cp < 0x80_u32
+        table[i] = cp | (1_u32 << 24)
+      elsif cp < 0x800_u32
+        b0 = 0xC0_u32 | (cp >> 6)
+        b1 = 0x80_u32 | (cp & 0x3F_u32)
+        table[i] = b0 | (b1 << 8) | (2_u32 << 24)
+      else
+        b0 = 0xE0_u32 | (cp >> 12)
+        b1 = 0x80_u32 | ((cp >> 6) & 0x3F_u32)
+        b2 = 0x80_u32 | (cp & 0x3F_u32)
+        table[i] = b0 | (b1 << 8) | (b2 << 16) | (3_u32 << 24)
+      end
+    end
+    table
+  end
+
+  # CP1252 → UTF-8 fast path: skip UCS-4 pivot, use precomputed byte expansion.
+  private def convert_cp1252_to_utf8(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+    src_pos = 0
+    dst_pos = 0
+
+    while src_pos < src.size
+      ascii_len = scan_ascii_run(src, src_pos)
+      if ascii_len > 0
+        avail = dst.size - dst_pos
+        copy_len = Math.min(ascii_len, avail)
+        (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, copy_len)
+        src_pos += copy_len
+        dst_pos += copy_len
+        return {src_pos, dst_pos, ConvertStatus::E2BIG} if copy_len < ascii_len
+        next
+      end
+
+      byte = src.unsafe_fetch(src_pos)
+      packed = CP1252_TO_UTF8[byte.to_i32 - 128]
+      len = (packed >> 24).to_i32
+
+      if len == 0
+        if @flags.ignore?
+          src_pos += 1
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      remaining = dst.size - dst_pos
+      return {src_pos, dst_pos, ConvertStatus::E2BIG} if remaining < len
+
+      ptr = dst.to_unsafe + dst_pos
+      ptr[0] = (packed & 0xFF).to_u8
+      ptr[1] = ((packed >> 8) & 0xFF).to_u8 if len >= 2
+      ptr[2] = ((packed >> 16) & 0xFF).to_u8 if len >= 3
+
+      src_pos += 1
+      dst_pos += len
+    end
+
+    {src_pos, dst_pos, ConvertStatus::OK}
   end
 end
