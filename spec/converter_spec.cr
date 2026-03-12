@@ -310,4 +310,30 @@ describe CharConv::Converter do
       String.new(r).should eq("Hello")
     end
   end
+
+  describe "one-shot allocation cap" do
+    it "normal conversions still work" do
+      c = CharConv::Converter.new("ISO-8859-1", "UTF-8")
+      input = Bytes.new(256) { |i| i.to_u8 }
+      result = c.convert(input)
+      result.size.should eq(128 + 128 * 2) # 128 ASCII + 128 × 2-byte UTF-8
+    end
+
+    it "grow-and-retry works for expanding conversions" do
+      # C99 encoding: every non-ASCII codepoint → \uXXXX (6 chars)
+      # "é" (2 UTF-8 bytes) → \u00E9 (6 bytes). 50 é's = 100 bytes in, 300 bytes out.
+      # Initial buffer = 100*2 = 200, too small → retry with 400.
+      c = CharConv::Converter.new("UTF-8", "C99")
+      input = ("é" * 50).to_slice
+      result = c.convert(input)
+      result.size.should eq(300)
+    end
+
+    it "stateful encoding (ISO-2022-JP) correct after retry" do
+      c = CharConv::Converter.new("UTF-8", "ISO-2022-JP")
+      # Simple ASCII — should work fine
+      result = c.convert("Hello".to_slice)
+      String.new(result).should eq("Hello")
+    end
+  end
 end

@@ -459,30 +459,56 @@ class CharConv::Converter
     end
   end
 
-  # One-shot conversion: allocates output buffer, converts, returns trimmed result.
-  def convert(input : Bytes) : Bytes
-    max_out = input.size.to_i64 * @to.max_bytes_per_char
-    # Cap at a reasonable size to avoid absurd allocations on empty input
-    max_out = 16_i64 if max_out < 16
-    # Transliteration can expand 1 char → up to 4 chars
-    max_out = max_out * 4 if @flags.translit?
-    # For BOM-detecting encodings, add space for BOM in output
-    max_out += 4 if @to.id.utf16? || @to.id.utf32? || @to.id.ucs2? || @to.id.ucs4?
-    # For stateful encodings, add space for escape sequences and flush
-    max_out += 16 if @to.stateful
-    dst = Bytes.new(max_out)
-    src_consumed, dst_written = convert(input, dst)
-    dst_written += flush_encoder(dst, dst_written)
+  # Hard cap on one-shot output buffer to prevent runaway allocations.
+  ONE_SHOT_MAX_BYTES = 64 * 1024 * 1024 # 64 MB
 
-    if src_consumed < input.size
-      unless @flags.ignore?
-        raise CharConv::ConversionError.new(
-          "Conversion failed at byte #{src_consumed} (#{src_consumed}/#{input.size} bytes consumed)"
-        )
+  # One-shot conversion: allocates output buffer, converts, returns trimmed result.
+  # Uses a grow-and-retry loop starting at `input.size * 2` (floor 64 bytes).
+  # On E2BIG, doubles the buffer and retries from scratch (with `reset`).
+  # Raises `ConversionError` if the output would exceed 64 MB.
+  def convert(input : Bytes) : Bytes
+    buf_size = Math.max(input.size.to_i64 * 2, 64_i64)
+    # For BOM-detecting encodings, ensure room for BOM
+    buf_size += 4 if @to.id.utf16? || @to.id.utf32? || @to.id.ucs2? || @to.id.ucs4?
+
+    loop do
+      capped = Math.min(buf_size, ONE_SHOT_MAX_BYTES.to_i64).to_i32
+      dst = Bytes.new(capped)
+      reset
+      src_consumed, dst_written, status = convert_with_status(input, dst)
+
+      if status == ConvertStatus::E2BIG
+        if buf_size >= ONE_SHOT_MAX_BYTES
+          raise CharConv::ConversionError.new(
+            "Output exceeds #{ONE_SHOT_MAX_BYTES} byte limit at byte #{src_consumed} " \
+            "(#{src_consumed}/#{input.size} bytes consumed)"
+          )
+        end
+        buf_size = buf_size * 2
+        next
       end
-      # With //IGNORE, trailing incomplete sequences are silently discarded
+
+      # Flush stateful encoders (ISO-2022-JP, UTF-7, HZ, etc.)
+      flush_written = flush_encoder(dst, dst_written)
+      if flush_written == 0 || dst_written + flush_written <= dst.size
+        dst_written += flush_written
+      else
+        # Flush didn't fit — grow and retry
+        buf_size = buf_size * 2
+        next if buf_size <= ONE_SHOT_MAX_BYTES
+        raise CharConv::ConversionError.new("Output exceeds #{ONE_SHOT_MAX_BYTES} byte limit during flush")
+      end
+
+      if src_consumed < input.size
+        unless @flags.ignore?
+          raise CharConv::ConversionError.new(
+            "Conversion failed at byte #{src_consumed} (#{src_consumed}/#{input.size} bytes consumed)"
+          )
+        end
+        # With //IGNORE, trailing incomplete sequences are silently discarded
+      end
+      return dst[0, dst_written]
     end
-    dst[0, dst_written]
   end
 
   # IO streaming: reads from input, converts, writes to output.
