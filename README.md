@@ -81,6 +81,96 @@ converter = CharConv::Converter.new("ISO-2022-JP", "UTF-8")
 end
 ```
 
+### Error handling
+
+charconv offers two error handling styles: status codes for streaming, and exceptions
+for one-shot conversion.
+
+**Status codes (streaming)**
+
+`convert_with_status` returns a `ConvertStatus` enum indicating why conversion stopped:
+
+| Status | Meaning | Action |
+|--------|---------|--------|
+| `OK` | All input consumed | Done — read `dst[0, written]` |
+| `E2BIG` | Output buffer full | Flush written bytes, call again with remaining input |
+| `EILSEQ` | Invalid byte sequence | Error at `src[consumed]` — handle or abort |
+| `EINVAL` | Incomplete sequence | Need more input bytes, or error at EOF |
+
+```crystal
+converter = CharConv::Converter.new("UTF-8", "ISO-8859-1")
+src = input_bytes
+dst = Bytes.new(src.size * 2)
+
+consumed, written, status = converter.convert_with_status(src, dst)
+case status
+when .ok?     then io.write(dst[0, written])
+when .e2_big? then # grow buffer or flush and retry with src[consumed..]
+when .eilseq? then raise "Invalid byte at position #{consumed}"
+when .einval? then raise "Incomplete sequence at end of input"
+end
+```
+
+**Exceptions (one-shot)**
+
+The one-shot `CharConv.convert` raises `CharConv::ConversionError` on failure:
+
+```crystal
+begin
+  result = CharConv.convert(input, "UTF-8", "ISO-8859-1")
+rescue ex : CharConv::ConversionError
+  puts ex.message # e.g. "Conversion failed at byte 42 (42/100 bytes consumed)"
+end
+```
+
+**Using flags instead of error handling**
+
+`//IGNORE` silently skips invalid bytes and unencodable characters.
+`//TRANSLIT` attempts ASCII approximations (e.g. `é` → `e`, `©` → `(c)`).
+Combine both for maximum tolerance:
+
+```crystal
+# Skip what can't be transliterated
+result = CharConv.convert(input, "UTF-8", "ASCII//TRANSLIT//IGNORE")
+```
+
+### Buffer sizing for streaming
+
+When using `convert` or `convert_with_status` with your own buffers:
+
+- **Safe default**: `src.size * 4` covers worst-case expansion (1-byte source → 4-byte UTF-8)
+- **Exact ceiling**: `src.size * converter.to.max_bytes_per_char` — never overestimates
+- **Same-family conversions** (e.g. ISO-8859-1 → ISO-8859-2): output ≤ input, so `src.size` suffices
+- **If `E2BIG` is returned**: double the buffer and retry, or flush written bytes and continue
+
+```crystal
+converter = CharConv::Converter.new("EUC-JP", "UTF-8")
+src = File.read("input.dat").to_slice
+dst = Bytes.new(src.size * converter.to.max_bytes_per_char)
+consumed, written, status = converter.convert_with_status(src, dst)
+```
+
+### Stateful encodings
+
+ISO-2022-JP, ISO-2022-CN, ISO-2022-KR, UTF-7, and HZ use escape sequences to
+switch between character sets. This means:
+
+1. **Call `flush_encoder` after the last chunk** to emit any pending escape sequences
+   (e.g. the switch-back-to-ASCII sequence in ISO-2022-JP):
+
+   ```crystal
+   converter = CharConv::Converter.new("UTF-8", "ISO-2022-JP")
+   consumed, written = converter.convert(src, dst)
+   flush_len = converter.flush_encoder(dst, written)
+   output.write(dst[0, written + flush_len])
+   ```
+
+2. **Call `reset` before reusing** the converter for a new document — otherwise
+   the encoder assumes it's continuing the previous stream's state.
+
+3. **One-shot and IO methods handle this automatically** — `flush_encoder` and
+   `reset` are only needed when using the buffer-based streaming API directly.
+
 ### Querying encodings
 
 ```crystal
