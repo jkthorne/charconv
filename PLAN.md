@@ -30,9 +30,9 @@ Replace Crystal's libiconv dependency entirely via `charconv/stdlib` bridge.
 Single-byte codecs already skip the UCS-4 pivot. Apply the same pattern to
 EUC-JP, GBK, EUC-KR (inline UTF-8 decode, skip pivot, direct emit).
 
-- [ ] Benchmark CJK paths to establish baseline
-- [ ] Inline UTF-8 decode in CJK encode paths
-- [ ] Consider 2D table -> direct UTF-8 emit
+- [x] ~~Benchmark CJK paths to establish baseline~~
+- [x] ~~Inline UTF-8 decode in CJK encode paths~~
+- [x] ~~`convert_utf8_to_cjk()` fast path for EUC-JP, GBK, EUC-CN, EUC-KR~~
 
 ### API Documentation
 
