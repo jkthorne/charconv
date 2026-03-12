@@ -41,7 +41,7 @@ already on master. The first release gets everything.
 
 - [ ] Tag `v0.1.0`, push tag
 - [ ] Verify shard installable via `github: jkthorne/charconv`
-- [ ] Fix README minimal-build description (says "produce incorrect results"
+- [x] Fix README minimal-build description (says "produce incorrect results"
   but stubs correctly return ILSEQ/ILUNI errors)
 
 **Ship first. Everything else comes after.**
@@ -70,14 +70,12 @@ effort.
 
 ### API Documentation
 
-The public API works but isn't well-documented for newcomers.
-
-- [ ] Run `crystal doc` and verify output quality
-- [ ] Document `ConvertStatus` enum (OK, E2BIG, EILSEQ, EINVAL) in README
-- [ ] Add error handling examples (what happens with invalid input, how to use
+- [x] Run `crystal doc` and verify output quality
+- [x] Document `ConvertStatus` enum (OK, E2BIG, EILSEQ, EINVAL) in README
+- [x] Add error handling examples (what happens with invalid input, how to use
   `//IGNORE` vs checking status codes)
-- [ ] Add buffer sizing guidance for streaming API
-- [ ] Document stateful encoding implications (ISO-2022-JP, UTF-7, HZ need
+- [x] Add buffer sizing guidance for streaming API
+- [x] Document stateful encoding implications (ISO-2022-JP, UTF-7, HZ need
   `reset` between independent chunks)
 
 ### CJK Encode Fast Paths
