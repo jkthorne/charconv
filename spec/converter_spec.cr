@@ -275,4 +275,39 @@ describe CharConv::Converter do
       result.should eq(Bytes[0xC2, 0xA9])
     end
   end
+
+  describe "#dup" do
+    it "produces an independent converter" do
+      c1 = CharConv::Converter.new("UTF-8", "ISO-8859-1")
+      c2 = c1.dup
+      # Convert with c1
+      r1 = c1.convert("café".to_slice)
+      r1.should eq(Bytes[99, 97, 102, 0xE9])
+      # c2 should be unaffected and convert independently
+      r2 = c2.convert("über".to_slice)
+      r2.should eq(Bytes[0xFC, 98, 101, 114])
+    end
+
+    it "handles stateful encodings (ISO-2022-JP)" do
+      c1 = CharConv::Converter.new("UTF-8", "ISO-2022-JP")
+      c2 = c1.dup
+      # Both should produce correct output independently
+      r1 = c1.convert("A".to_slice)
+      r2 = c2.convert("A".to_slice)
+      r1.should eq(r2)
+    end
+
+    it "dup'd converter has fresh state for ISO-2022-JP decode" do
+      c1 = CharConv::Converter.new("ISO-2022-JP", "UTF-8")
+      # Convert some Japanese to change c1's internal state
+      # ESC $ B (switch to JIS X 0208) + 0x24 0x22 (あ)
+      jp_input = Bytes[0x1B, 0x24, 0x42, 0x24, 0x22]
+      dst = Bytes.new(64)
+      c1.convert(jp_input, dst)
+      # Now dup — should get a fresh converter in ASCII mode
+      c2 = c1.dup
+      r = c2.convert("Hello".to_slice)
+      String.new(r).should eq("Hello")
+    end
+  end
 end

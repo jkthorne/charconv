@@ -63,6 +63,24 @@ converter = CharConv::Converter.new("GB18030", "UTF-8")
 converter.convert(input_io, output_io, buffer_size: 16384)
 ```
 
+### Thread Safety
+
+`Converter` instances are **not** thread-safe — they hold mutable codec state for
+stateful encodings (ISO-2022-JP, UTF-7, HZ, etc.). Do not share a converter across
+fibers or threads. Instead, call `#dup` to create an independent copy:
+
+```crystal
+converter = CharConv::Converter.new("ISO-2022-JP", "UTF-8")
+
+# Each fiber gets its own copy with fresh state
+10.times do
+  spawn do
+    my_conv = converter.dup
+    my_conv.convert(input_bytes, output_bytes)
+  end
+end
+```
+
 ### Querying encodings
 
 ```crystal

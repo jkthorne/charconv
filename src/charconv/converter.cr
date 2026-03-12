@@ -1,3 +1,9 @@
+# Converts text between character encodings using a Unicode pivot.
+#
+# **Thread safety:** `Converter` is **NOT** thread-safe. Each instance holds
+# mutable codec state (for stateful encodings like ISO-2022-JP, UTF-7, HZ).
+# Do not share a single `Converter` across fibers or threads. Instead, call
+# `#dup` to create an independent copy with fresh state.
 class CharConv::Converter
   getter from : EncodingInfo
   getter to : EncodingInfo
@@ -540,6 +546,25 @@ class CharConv::Converter
   def reset
     @state_decode.reset
     @state_encode.reset
+    init_codec_modes
+  end
+
+  # Creates an independent copy of this converter. The new instance shares
+  # immutable table pointers but has fresh codec state — it does NOT copy
+  # mid-stream state, so always `dup` before starting a conversion, not in
+  # the middle of one.
+  def dup : Converter
+    conv = Converter.allocate
+    conv.initialize_dup(@from, @to, @flags, @decode_table, @encode_table, @sb_to_utf8_table)
+    conv
+  end
+
+  # :nodoc:
+  protected def initialize_dup(@from : EncodingInfo, @to : EncodingInfo, @flags : ConversionFlags,
+                               @decode_table : Pointer(UInt16), @encode_table : Pointer(UInt8),
+                               @sb_to_utf8_table : Pointer(UInt32))
+    @state_decode = CodecState.new
+    @state_encode = CodecState.new
     init_codec_modes
   end
 
