@@ -1,9 +1,47 @@
-# Converts text between character encodings using a Unicode pivot.
+# Converts text between character encodings using a Unicode (UCS-4) pivot.
 #
-# **Thread safety:** `Converter` is **NOT** thread-safe. Each instance holds
-# mutable codec state (for stateful encodings like ISO-2022-JP, UTF-7, HZ).
-# Do not share a single `Converter` across fibers or threads. Instead, call
-# `#dup` to create an independent copy with fresh state.
+# Every conversion goes through: `Source bytes → UCS-4 codepoint → Target bytes`.
+# For ASCII-superset pairs, an 8-byte word scanner identifies ASCII runs and
+# copies them directly at memory bandwidth.
+#
+# ### Basic usage
+#
+# ```
+# converter = CharConv::Converter.new("EUC-JP", "UTF-8")
+# consumed, written = converter.convert(input_bytes, output_bytes)
+# ```
+#
+# ### Error handling with status codes
+#
+# ```
+# converter = CharConv::Converter.new("UTF-8", "ISO-8859-1")
+# consumed, written, status = converter.convert_with_status(src, dst)
+#
+# case status
+# when .ok?     then output.write(dst[0, written])
+# when .e2_big? then # grow output buffer, retry with src[consumed..]
+# when .eilseq? then # invalid byte at src[consumed]
+# when .einval? then # incomplete sequence, wait for more input
+# end
+# ```
+#
+# ### Stateful encodings
+#
+# Encodings like ISO-2022-JP, UTF-7, and HZ maintain internal state across
+# calls. After processing a complete document, call `#flush_encoder` to emit
+# any pending escape sequences. Call `#reset` before reusing the converter
+# for a new, independent document.
+#
+# ### Thread safety
+#
+# `Converter` is **NOT** thread-safe — it holds mutable codec state. Do not
+# share across fibers or threads. Call `#dup` to create an independent copy.
+#
+# ```
+# converter = CharConv::Converter.new("ISO-2022-JP", "UTF-8")
+# spawn { converter.dup.convert(data1, out1) }
+# spawn { converter.dup.convert(data2, out2) }
+# ```
 class CharConv::Converter
   getter from : EncodingInfo
   getter to : EncodingInfo
@@ -12,6 +50,18 @@ class CharConv::Converter
   @encode_table : Pointer(UInt8)
   @sb_to_utf8_table : Pointer(UInt32)
 
+  # Creates a new converter from *from_encoding* to *to_encoding*.
+  #
+  # Encoding names are case-insensitive and support 550+ aliases (e.g.
+  # `"UTF-8"`, `"utf8"`, `"CP65001"` all resolve to UTF-8). Append
+  # `//TRANSLIT` and/or `//IGNORE` to the target encoding for flag control.
+  #
+  # Raises `ArgumentError` if either encoding name is unknown.
+  #
+  # ```
+  # converter = CharConv::Converter.new("Shift_JIS", "UTF-8")
+  # converter = CharConv::Converter.new("UTF-8", "ASCII//TRANSLIT//IGNORE")
+  # ```
   def initialize(from_encoding : String, to_encoding : String)
     @from = Registry.lookup(from_encoding) || raise ArgumentError.new("Unknown encoding: #{from_encoding}")
     @to = Registry.lookup(to_encoding) || raise ArgumentError.new("Unknown encoding: #{to_encoding}")
@@ -436,13 +486,41 @@ class CharConv::Converter
     {src_pos, dst_pos, ConvertStatus::OK}
   end
 
+  # Converts bytes from *src* into *dst*, returning `{src_consumed, dst_written}`.
+  #
+  # You provide both buffers — no allocations occur. Call repeatedly in a loop
+  # for streaming conversion, advancing *src* by `consumed` and *dst* by `written`
+  # after each call.
+  #
+  # ```
+  # converter = CharConv::Converter.new("EUC-JP", "UTF-8")
+  # consumed, written = converter.convert(input_bytes, output_bytes)
+  # ```
   def convert(src : Bytes, dst : Bytes) : {Int32, Int32}
     consumed, written, _status = convert_with_status(src, dst)
     {consumed, written}
   end
 
-  # Like convert but returns a status code indicating why conversion stopped.
-  # Used by the stdlib iconv bridge to set errno correctly.
+  # Converts bytes from *src* into *dst*, returning `{src_consumed, dst_written, status}`.
+  #
+  # The `ConvertStatus` indicates why conversion stopped:
+  # - `OK` — all input consumed successfully
+  # - `E2BIG` — output buffer full; consume written bytes, then call again
+  # - `EILSEQ` — invalid byte sequence at `src[consumed]`
+  # - `EINVAL` — incomplete multibyte sequence at end of input; provide more bytes
+  #
+  # ### Buffer sizing
+  #
+  # For output, allocate at least `src.size * to.max_bytes_per_char` bytes to
+  # avoid `E2BIG` on the first call. For unknown input, start with `src.size * 4`
+  # (covers worst-case UTF-8 expansion) and grow on `E2BIG`.
+  #
+  # ```
+  # converter = CharConv::Converter.new("UTF-8", "UTF-16BE")
+  # src = input_bytes
+  # dst = Bytes.new(src.size * 4)
+  # consumed, written, status = converter.convert_with_status(src, dst)
+  # ```
   def convert_with_status(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
     if @from.id.iso_8859_1? && @to.id.utf8?
       convert_iso8859_1_to_utf8(src, dst)
@@ -461,13 +539,21 @@ class CharConv::Converter
     end
   end
 
-  # Hard cap on one-shot output buffer to prevent runaway allocations.
-  ONE_SHOT_MAX_BYTES = 64 * 1024 * 1024 # 64 MB
+  # Maximum output buffer size for one-shot conversion (64 MB).
+  ONE_SHOT_MAX_BYTES = 64 * 1024 * 1024
 
-  # One-shot conversion: allocates output buffer, converts, returns trimmed result.
-  # Uses a grow-and-retry loop starting at `input.size * 2` (floor 64 bytes).
-  # On E2BIG, doubles the buffer and retries from scratch (with `reset`).
-  # Raises `ConversionError` if the output would exceed 64 MB.
+  # Converts *input* bytes and returns the result as a new `Bytes` slice.
+  #
+  # Automatically allocates and grows the output buffer as needed (starting at
+  # `input.size * 2`, doubling on `E2BIG`). Stateful encoders are flushed
+  # automatically. Raises `ConversionError` if:
+  # - The output would exceed 64 MB
+  # - An invalid/incomplete sequence is encountered (unless `//IGNORE` is set)
+  #
+  # ```
+  # converter = CharConv::Converter.new("GBK", "UTF-8")
+  # utf8_bytes = converter.convert(gbk_input)
+  # ```
   def convert(input : Bytes) : Bytes
     buf_size = Math.max(input.size.to_i64 * 2, 64_i64)
     # For BOM-detecting encodings, ensure room for BOM
@@ -513,8 +599,18 @@ class CharConv::Converter
     end
   end
 
-  # IO streaming: reads from input, converts, writes to output.
-  # Handles partial consumption, multi-chunk processing, and stateful flush.
+  # Reads from *input* IO, converts, and writes to *output* IO.
+  #
+  # Processes data in chunks of *buffer_size* bytes. The output buffer is
+  # automatically sized to `buffer_size * max_bytes_per_char` for the target
+  # encoding. Stateful encoders are flushed at EOF.
+  #
+  # Raises `ConversionError` if unconsumed bytes remain at EOF (unless `//IGNORE`).
+  #
+  # ```
+  # converter = CharConv::Converter.new("GB18030", "UTF-8")
+  # converter.convert(input_io, output_io, buffer_size: 16384)
+  # ```
   def convert(input : IO, output : IO, buffer_size : Int32 = 8192)
     src_buf = Bytes.new(buffer_size)
     dst_buf = Bytes.new(buffer_size * @to.max_bytes_per_char.to_i32)
@@ -554,7 +650,18 @@ class CharConv::Converter
     output.write(dst_buf[0, flush_written]) if flush_written > 0
   end
 
-  # Flush stateful encoder state to dst. Returns bytes written.
+  # Flushes any pending state from stateful encoders (ISO-2022-JP, UTF-7, HZ, etc.)
+  # into *dst* starting at byte offset *pos*. Returns the number of bytes written.
+  #
+  # Call this after the last `convert` call when processing a complete document.
+  # For stateless encodings, this is a no-op returning 0.
+  #
+  # ```
+  # converter = CharConv::Converter.new("UTF-8", "ISO-2022-JP")
+  # consumed, written = converter.convert(src, dst)
+  # flush_len = converter.flush_encoder(dst, written)
+  # total_written = written + flush_len
+  # ```
   def flush_encoder(dst : Bytes, pos : Int32) : Int32
     if @to.id.utf7? && @state_encode.mode == 2_u8
       Codec::UTF7.flush_base64(dst, pos, pointerof(@state_encode))
@@ -571,16 +678,27 @@ class CharConv::Converter
     end
   end
 
+  # Resets the converter to its initial state.
+  #
+  # Call this before reusing a converter for a new, independent document.
+  # Required for stateful encodings (ISO-2022-JP, UTF-7, HZ, etc.) that
+  # accumulate mode state across `convert` calls.
   def reset
     @state_decode.reset
     @state_encode.reset
     init_codec_modes
   end
 
-  # Creates an independent copy of this converter. The new instance shares
-  # immutable table pointers but has fresh codec state — it does NOT copy
-  # mid-stream state, so always `dup` before starting a conversion, not in
-  # the middle of one.
+  # Creates an independent copy with fresh codec state.
+  #
+  # The new instance shares immutable table pointers but has its own state,
+  # making it safe to use in a separate fiber. Always `dup` *before* starting
+  # a conversion — mid-stream state is **not** copied.
+  #
+  # ```
+  # base = CharConv::Converter.new("ISO-2022-JP", "UTF-8")
+  # spawn { base.dup.convert(data, output) }
+  # ```
   def dup : Converter
     conv = Converter.allocate
     conv.initialize_dup(@from, @to, @flags, @decode_table, @encode_table, @sb_to_utf8_table)
