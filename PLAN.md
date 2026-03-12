@@ -3,19 +3,18 @@
 Pure Crystal implementation of GNU libiconv. 150+ character encodings,
 Unicode (UCS-4) pivot, performance-first design.
 
-**Status: Ship v0.1.0, then harden.**
+**Status: Phase 2 complete. Ship v0.2.0.**
 
 ---
 
 ## Where We Are
 
-The library works. 150+ encodings, exhaustive correctness tests against system
-iconv, 2–162x faster across every benchmark, complete stdlib bridge, zero
-dependencies. The `perf/fast-path` branch (7 commits ahead of master) adds
-binary-embedded tables and generalized single-byte ↔ UTF-8 fast paths.
+The library is feature-complete and hardened. 150+ encodings, exhaustive
+correctness tests against system iconv, 2–162x faster across every benchmark,
+complete stdlib bridge, zero dependencies.
 
 What's done:
-- 558+ tests, 0 failures across macOS + Ubuntu
+- 636+ tests, 0 failures across macOS + Ubuntu
 - All encoding families: ASCII, Unicode (UTF-7/8/16/32, UCS-2/4, C99, Java),
   64 single-byte (ISO, Windows, KOI8, Mac, DOS, EBCDIC), 21 CJK (EUC-JP,
   Shift_JIS, GBK, GB18030, Big5, EUC-KR, ISO-2022-*, HZ), plus exotics
@@ -24,7 +23,12 @@ What's done:
 - CI: GitHub Actions, macOS + Ubuntu, Crystal latest + 1.19.1
 - Binary-embedded tables (228 .bin files, 2 MB) replacing Crystal source arrays
 - Specialized fast paths: ISO-8859-1 ↔ UTF-8 (bit math), all 64 single-byte → UTF-8
-  (packed table), UTF-8 → all 64 single-byte (inline decode + table)
+  (packed table), UTF-8 → all 64 single-byte (inline decode + table),
+  UTF-8 → UTF-8 (validate + copy, no pivot)
+- Thread-safety documented, `Converter#dup` for per-fiber cloning
+- One-shot allocation capped at 64 MB with grow-and-retry loop
+- `-Dcharconv_minimal` compile flag (2.9 MB → 1.7 MB, excludes CJK tables)
+- Extended differential fuzzing with CJK generators, weekly CI workflow
 
 ### Current Benchmarks
 
@@ -63,62 +67,42 @@ Delaying for polish is how projects die on the vine.**
 These are the things that matter for production use by other people.
 Ordered by impact, not effort.
 
-### 2.1 Thread Safety
+### 2.1 Thread Safety ✓
 
-`Converter` holds mutable state (`@state_decode`, `@state_encode`) — it is
-**not thread-safe**. This is fine (same contract as C iconv), but it must be
-documented explicitly. Users creating a converter per fiber/thread is the
-right pattern.
+- [x] Add thread-safety note to README usage section
+- [x] Add thread-safety note to `Converter` class doc comment
+- [x] Implement `Converter#dup` for per-fiber cloning (shares immutable tables, fresh `CodecState`)
 
-- [ ] Add thread-safety note to README usage section
-- [ ] Add thread-safety note to `Converter` class doc comment
-- [ ] Consider `Converter#dup` for easy per-fiber cloning (resets state, shares tables)
+### 2.2 Binary Size Budget ✓
 
-### 2.2 Binary Size Budget
+Crystal's `read_file` embeds all table data unconditionally. Full binary: 2.9 MB.
 
-Every binary that `require "charconv"` links against gets ~2 MB of table data
-embedded via `read_file`. For a CLI tool that only converts UTF-8 ↔ ISO-8859-1,
-this is wasteful. For a web server that needs all 150 encodings, it's fine.
+- [x] Measured binary size: 2.9 MB full, 1.7 MB minimal (41% reduction)
+- [x] Added `-Dcharconv_minimal` compile flag excluding CJK tables/codecs
+- [x] Stub codec modules return ILSEQ/ILUNI for excluded encodings
+- [x] Documented in README
 
-- [ ] Measure actual binary size impact with `--release` (Crystal strips unused?)
-- [ ] If Crystal's `read_file` embeds unconditionally: consider lazy `mmap` from
-  a shard data directory, or a compile flag `-Dcharconv_minimal` that includes
-  only Unicode + ISO-8859-* + CP1252
-- [ ] If Crystal dead-code-eliminates unused tables: document this and move on
+### 2.3 Cap One-Shot Allocation ✓
 
-### 2.3 Cap One-Shot Allocation
+- [x] Replaced worst-case upfront allocation with grow-and-retry loop
+- [x] Starts at `input.size * 2` (floor 64 bytes), doubles on E2BIG
+- [x] Calls `reset` before each retry (critical for stateful codecs)
+- [x] Hard cap at 64 MB with `ConversionError` on overflow
 
-`convert(Bytes)` allocates worst-case upfront. UTF-7 + `//TRANSLIT` on 1 MB input
-= 32 MB buffer. No user has hit this, but it's a DoS vector if untrusted input
-controls encoding choice.
+### 2.4 Differential Fuzzing ✓
 
-- [ ] Replace with grow-and-retry: start at `input.size * 2`, grow 2x on E2BIG
-- [ ] Cap maximum allocation (e.g., 64 MB) and raise on overflow
+- [x] Extended fuzz spec with CJK roundtrip correctness + crash-safety tests
+- [x] Added targeted generators: GB18030 4-byte, ISO-2022-JP escapes,
+  UTF-7 base64, Big5-HKSCS high-range pairs
+- [x] Iteration count configurable via `FUZZ_DEEP` / `FUZZ_MAX_SIZE` env vars
+- [x] Weekly scheduled CI workflow (Monday 3 AM UTC, 5000 iterations, `--release`)
 
-### 2.4 Differential Fuzzing
+### 2.5 UTF-8 → UTF-8 Fast Path ✓
 
-The exhaustive specs cover every single byte (0x00–0xFF) for all 64 single-byte
-codecs, and the fuzz spec throws random data at converters. But the CJK codecs
-have multi-byte sequences with large state spaces that aren't fully explored.
-
-- [ ] Add continuous fuzz target: random bytes → charconv vs system iconv,
-  assert identical output (or both error)
-- [ ] Focus on GB18030 4-byte sequences, ISO-2022-JP escape transitions,
-  UTF-7 base64 edge cases, Big5-HKSCS supplementary mappings
-- [ ] Run overnight on CI (scheduled workflow, not per-commit)
-
-### 2.5 UTF-8 → UTF-8 Fast Path
-
-Currently 2.4x faster than system iconv, but this path goes through
-decode-one + encode-one per character. UTF-8 → UTF-8 is just validation +
-memcpy. A dedicated path that validates in bulk (scan for overlong sequences,
-surrogates, and continuation byte errors) and copies in one shot would be
-significantly faster.
-
-- [ ] Implement `convert_utf8_to_utf8` that validates and copies
-- [ ] The ASCII scanner already handles the common case; focus on validating
-  non-ASCII runs without re-encoding them
-- [ ] Target: match ASCII → ASCII throughput for valid UTF-8 input
+- [x] Implemented `convert_utf8_to_utf8` — validates inline, copies directly
+- [x] Reuses `scan_ascii_run` + memcpy for ASCII runs
+- [x] Validates overlong, surrogates, range limits matching `Decode.utf8`
+- [x] Benchmarks pending `--release` measurement (expected significant improvement)
 
 ---
 
@@ -232,3 +216,4 @@ See [ARCHITECTURE.md](ARCHITECTURE.md).
 9. **CI** — GitHub Actions (macOS + Ubuntu, Crystal latest + 1.19.1)
 10. **Fast paths** — ISO-8859-1 ↔ UTF-8 bit math, generalized single-byte ↔ UTF-8
 11. **Binary tables** — Replaced Crystal source arrays with 228 binary .bin files
+12. **Hardening** — Thread-safety docs + `#dup`, allocation cap, UTF-8 fast path, minimal build flag, extended fuzzing
