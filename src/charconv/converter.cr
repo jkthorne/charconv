@@ -530,6 +530,8 @@ class CharConv::Converter
       convert_singlebyte_to_utf8(src, dst)
     elsif @from.id.utf8? && @to.ascii_superset && @to.max_bytes_per_char == 1 && !@encode_table.null?
       convert_utf8_to_singlebyte(src, dst)
+    elsif @from.id.utf8? && (@to.id.euc_jp? || @to.id.gbk? || @to.id.euc_cn? || @to.id.gb2312? || @to.id.euc_kr?)
+      convert_utf8_to_cjk(src, dst)
     elsif @from.id.utf8? && @to.id.utf8?
       convert_utf8_to_utf8(src, dst)
     elsif @from.ascii_superset && @to.ascii_superset
@@ -1167,6 +1169,161 @@ class CharConv::Converter
 
       if @flags.ignore?
         src_pos += 1
+        next
+      end
+      return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+    end
+
+    {src_pos, dst_pos, ConvertStatus::OK}
+  end
+
+  # UTF-8 → CJK (EUC-JP, GBK, EUC-CN, EUC-KR) fast path.
+  # Inline UTF-8 decode + direct 2-level page table encode, with ASCII scan + memcpy.
+  private def convert_utf8_to_cjk(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+    # Select encoding-specific tables
+    case @to.id
+    when .euc_jp?
+      summary = Tables::CJKJis::EUCJP_ENCODE_SUMMARY
+      pages = Tables::CJKJis::EUCJP_ENCODE_PAGES
+    when .gbk?
+      summary = Tables::CJKGB::GBK_ENCODE_SUMMARY
+      pages = Tables::CJKGB::GBK_ENCODE_PAGES
+    when .euc_cn?, .gb2312?
+      summary = Tables::CJKGB::EUCCN_ENCODE_SUMMARY
+      pages = Tables::CJKGB::EUCCN_ENCODE_PAGES
+    when .euc_kr?
+      summary = Tables::CJKKSC::EUCKR_ENCODE_SUMMARY
+      pages = Tables::CJKKSC::EUCKR_ENCODE_PAGES
+    else
+      return convert_ascii_fast(src, dst)
+    end
+
+    is_euc_jp = @to.id.euc_jp?
+    src_pos = 0
+    dst_pos = 0
+
+    while src_pos < src.size
+      # Fast ASCII scan + memcpy
+      ascii_len = scan_ascii_run(src, src_pos)
+      if ascii_len > 0
+        avail = dst.size - dst_pos
+        copy_len = Math.min(ascii_len, avail)
+        (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, copy_len)
+        src_pos += copy_len
+        dst_pos += copy_len
+        return {src_pos, dst_pos, ConvertStatus::E2BIG} if copy_len < ascii_len
+        next
+      end
+
+      b0 = src.unsafe_fetch(src_pos).to_u32
+
+      if b0 < 0xC2
+        if @flags.ignore?
+          src_pos += 1
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      if b0 < 0xE0 # 2-byte UTF-8 → U+0080..U+07FF
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 2
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        unless b1 & 0xC0 == 0x80
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
+        seq_len = 2
+      elsif b0 < 0xF0 # 3-byte UTF-8 → U+0800..U+FFFF
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 3
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        b2 = src.unsafe_fetch(src_pos + 2).to_u32
+        unless (b1 & 0xC0 == 0x80) && (b2 & 0xC0 == 0x80)
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
+        if cp < 0x0800 || (cp >= 0xD800 && cp <= 0xDFFF)
+          if @flags.ignore?
+            src_pos += 3
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        seq_len = 3
+      elsif b0 <= 0xF4 # 4-byte UTF-8 → U+10000..U+10FFFF
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if src.size - src_pos < 4
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        b2 = src.unsafe_fetch(src_pos + 2).to_u32
+        b3 = src.unsafe_fetch(src_pos + 3).to_u32
+        unless (b1 & 0xC0 == 0x80) && (b2 & 0xC0 == 0x80) && (b3 & 0xC0 == 0x80)
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F)
+        if cp < 0x10000 || cp > 0x10FFFF
+          if @flags.ignore?
+            src_pos += 4
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        seq_len = 4
+      else
+        if @flags.ignore?
+          src_pos += 1
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      # EUC-JP special case: half-width katakana U+FF61..U+FF9F → 0x8E + byte
+      if is_euc_jp && cp >= 0xFF61 && cp <= 0xFF9F
+        return {src_pos, dst_pos, ConvertStatus::E2BIG} if dst.size - dst_pos < 2
+        dst.to_unsafe[dst_pos] = 0x8E_u8
+        dst.to_unsafe[dst_pos + 1] = (0xA1_u32 + cp - 0xFF61_u32).to_u8
+        src_pos += seq_len
+        dst_pos += 2
+        next
+      end
+
+      # 2-level page table encode
+      if cp <= 0xFFFF
+        high = (cp >> 8).to_i32 & 0xFF
+        page_idx = summary.unsafe_fetch(high)
+        if page_idx != 0xFFFF_u16
+          encoded = pages[page_idx.to_i32].unsafe_fetch(cp.to_i32 & 0xFF)
+          if encoded != 0_u16
+            return {src_pos, dst_pos, ConvertStatus::E2BIG} if dst.size - dst_pos < 2
+            dst.to_unsafe[dst_pos] = (encoded >> 8).to_u8
+            dst.to_unsafe[dst_pos + 1] = (encoded & 0xFF).to_u8
+            src_pos += seq_len
+            dst_pos += 2
+            next
+          end
+        end
+      end
+
+      # Codepoint not encodable — try TRANSLIT/IGNORE
+      if @flags.translit?
+        t = transliterate(cp, dst, dst_pos)
+        if t > 0
+          src_pos += seq_len
+          dst_pos += t
+          next
+        end
+      end
+      if @flags.ignore?
+        src_pos += seq_len
         next
       end
       return {src_pos, dst_pos, ConvertStatus::EILSEQ}
