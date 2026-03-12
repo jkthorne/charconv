@@ -186,6 +186,21 @@ converts at memory bandwidth.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design rationale.
 
+## Minimal Build
+
+By default, charconv embeds lookup tables for all 150+ encodings including CJK
+(~2 MB of table data). To build a smaller binary with only Western encodings:
+
+```sh
+crystal build app.cr -Dcharconv_minimal --release
+```
+
+The minimal set includes: ASCII, UTF-8, ISO-8859-1 through -16, CP1250-1258,
+KOI8-R/U, Mac encodings, DOS codepages, EBCDIC, UTF-16/32, UTF-7, C99, Java,
+and all other single-byte encodings. CJK encodings (Shift_JIS, EUC-JP, GBK,
+Big5, GB18030, EUC-KR, ISO-2022-*, HZ, etc.) are excluded — attempting to use
+them will fall through to the single-byte table path and produce incorrect results.
+
 ## Development
 
 ```sh
