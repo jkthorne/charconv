@@ -1,3 +1,9 @@
+# Decode functions: source bytes → UCS-4 codepoint.
+#
+# Each method reads one character from *src* at byte offset *pos* and returns
+# a `DecodeResult`. Specialized decoders exist for ASCII, UTF-8, ISO-8859-1,
+# and a generic table-driven path for all other single-byte encodings.
+# CJK and stateful decoders live in `Codec::*`.
 module CharConv::Decode
   @[AlwaysInline]
   def self.ascii(src : Bytes, pos : Int32) : DecodeResult

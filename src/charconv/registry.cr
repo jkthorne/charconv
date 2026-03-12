@@ -1,3 +1,14 @@
+# Encoding name resolution and metadata registry.
+#
+# Maps 550+ encoding aliases (case-insensitive, punctuation-stripped) to
+# `EncodingID` values, and stores `EncodingInfo` metadata (ASCII-superset flag,
+# max bytes per character, statefulness) for each encoding.
+#
+# ```
+# info = CharConv::Registry.lookup("UTF-8")       # => EncodingInfo
+# info = CharConv::Registry.lookup("NONEXISTENT")  # => nil
+# flags = CharConv::Registry.parse_flags("ASCII//TRANSLIT//IGNORE")
+# ```
 module CharConv::Registry
   # EncodingID → EncodingInfo flat array. Indexed by EncodingID.value.
   # Each entry: {ascii_superset, max_bytes_per_char, stateful}
@@ -583,6 +594,8 @@ module CharConv::Registry
     "EUC-KR", "CP949", "ISO-2022-KR", "JOHAB",
   ]
 
+  # Normalizes an encoding name by uppercasing and stripping non-alphanumeric
+  # characters. For example, `"UTF-8"` → `"UTF8"`, `"ISO-8859-1"` → `"ISO88591"`.
   def self.normalize(name : String) : String
     String.build(name.size) do |io|
       name.each_char do |c|
@@ -593,6 +606,10 @@ module CharConv::Registry
     end
   end
 
+  # Looks up an encoding by name, returning its `EncodingInfo` or `nil`.
+  #
+  # Strips `//IGNORE` and `//TRANSLIT` suffixes before lookup. Accepts any
+  # alias registered in `ALIASES` (case-insensitive, punctuation-stripped).
   def self.lookup(name : String) : EncodingInfo?
     # Strip //IGNORE and //TRANSLIT suffixes
     clean = name
@@ -605,6 +622,8 @@ module CharConv::Registry
     end
   end
 
+  # Extracts `ConversionFlags` from `//IGNORE` and `//TRANSLIT` suffixes
+  # in an encoding name string.
   def self.parse_flags(name : String) : ConversionFlags
     flags = ConversionFlags::None
     if idx = name.index("//")
@@ -615,6 +634,7 @@ module CharConv::Registry
     flags
   end
 
+  # Returns a copy of the canonical encoding name list.
   def self.canonical_names : Array(String)
     CANONICAL_NAMES.dup
   end

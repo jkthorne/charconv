@@ -1,3 +1,9 @@
+# Encode functions: UCS-4 codepoint → target bytes.
+#
+# Each method writes one encoded character into *dst* at byte offset *pos*
+# and returns an `EncodeResult`. Specialized encoders exist for ASCII, UTF-8,
+# ISO-8859-1, and a generic table-driven path for all other single-byte
+# encodings. CJK and stateful encoders live in `Codec::*`.
 module CharConv::Encode
   @[AlwaysInline]
   def self.ascii(cp : UInt32, dst : Bytes, pos : Int32) : EncodeResult
