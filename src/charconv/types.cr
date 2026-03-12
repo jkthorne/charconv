@@ -1,8 +1,12 @@
 module CharConv
-  # Stack-allocated result from decoding one character.
-  # `status` > 0: number of bytes consumed; `codepoint` is the decoded value.
-  # `status` == 0: incomplete sequence (need more input).
-  # `status` == -1: illegal sequence.
+  # Stack-allocated result from decoding one source character to a Unicode codepoint.
+  #
+  # Check `#status` to determine the outcome:
+  # - `status > 0` — success: *status* bytes were consumed from the source, `#codepoint` holds the decoded value
+  # - `status == 0` — incomplete sequence: need more input bytes
+  # - `status == -1` — illegal byte sequence
+  #
+  # Use `#ok?` as a shorthand for `status > 0`.
   struct DecodeResult
     getter codepoint : UInt32
     getter status : Int32
@@ -10,34 +14,46 @@ module CharConv
     def initialize(@codepoint : UInt32, @status : Int32)
     end
 
+    # Sentinel: illegal byte sequence in source.
     ILSEQ  = new(0_u32, -1)
+    # Sentinel: incomplete multibyte sequence (need more input).
     TOOFEW = new(0_u32, 0)
 
+    # Returns `true` if decoding succeeded (consumed at least one byte).
     @[AlwaysInline]
     def ok? : Bool
       @status > 0
     end
   end
 
-  # Stack-allocated result from encoding one codepoint.
-  # `status` > 0: number of bytes written.
-  # `status` == 0: output buffer too small.
-  # `status` == -1: codepoint not representable in target encoding.
+  # Stack-allocated result from encoding one Unicode codepoint to target bytes.
+  #
+  # Check `#status` to determine the outcome:
+  # - `status > 0` — success: *status* bytes were written to the destination
+  # - `status == 0` — output buffer too small
+  # - `status == -1` — codepoint not representable in the target encoding
+  #
+  # Use `#ok?` as a shorthand for `status > 0`.
   struct EncodeResult
     getter status : Int32
 
     def initialize(@status : Int32)
     end
 
+    # Sentinel: codepoint not representable in target encoding.
     ILUNI    = new(-1)
+    # Sentinel: output buffer too small for the encoded bytes.
     TOOSMALL = new(0)
 
+    # Returns `true` if encoding succeeded (wrote at least one byte).
     @[AlwaysInline]
     def ok? : Bool
       @status > 0
     end
   end
 
+  # Identifies a specific character encoding. 189 values covering ASCII, Unicode,
+  # ISO-8859, Windows codepages, Mac, DOS/IBM, EBCDIC, CJK, and more.
   enum EncodingID : UInt16
     ASCII
     UTF8
@@ -188,6 +204,8 @@ module CharConv
     JOHAB
   end
 
+  # Metadata about a character encoding: whether it's an ASCII superset,
+  # maximum bytes per character, and whether it requires stateful codec state.
   struct EncodingInfo
     getter id : EncodingID
     getter ascii_superset : Bool
@@ -198,21 +216,52 @@ module CharConv
     end
   end
 
-  # Per-codec mutable state. Unused in Phase 1 (stateless encodings only)
-  # but establishes the struct layout for future stateful codecs.
+  # Status code returned by `Converter#convert_with_status`, indicating why
+  # conversion stopped. Modeled after GNU iconv errno values.
+  #
+  # ```
+  # consumed, written, status = converter.convert_with_status(src, dst)
+  # case status
+  # when .ok?     then puts "done"
+  # when .e2_big? then puts "output buffer full — call again"
+  # when .eilseq? then puts "invalid byte at position #{consumed}"
+  # when .einval? then puts "incomplete sequence — need more input"
+  # end
+  # ```
   enum ConvertStatus
-    OK     # All input consumed
-    E2BIG  # Output buffer full
-    EILSEQ # Invalid byte sequence in input
-    EINVAL # Incomplete multibyte sequence at end of input
+    # All input was consumed successfully.
+    OK
+    # Output buffer is full. Consume the written bytes and call again
+    # with the remaining input and a fresh (or emptied) output buffer.
+    E2BIG
+    # An invalid byte sequence was encountered at the current source position.
+    # The `consumed` return value indicates the byte offset of the error.
+    EILSEQ
+    # The input ends with an incomplete multibyte sequence. Provide more
+    # input bytes to complete the sequence, or treat as an error at EOF.
+    EINVAL
   end
 
+  # Flags controlling conversion behavior, parsed from `//IGNORE` and
+  # `//TRANSLIT` suffixes on the target encoding name.
+  #
+  # ```
+  # # Parsed automatically from encoding name:
+  # converter = CharConv::Converter.new("UTF-8", "ASCII//TRANSLIT//IGNORE")
+  # converter.flags.translit? # => true
+  # converter.flags.ignore?   # => true
+  # ```
   @[Flags]
   enum ConversionFlags : UInt8
-    Ignore   = 1 # //IGNORE — skip bad input bytes & unencodable chars
-    Translit = 2 # //TRANSLIT — try fallback mappings before giving up
+    # Skip invalid input bytes and unencodable characters instead of stopping.
+    Ignore   = 1
+    # Attempt transliteration (e.g. `"é"` → `"e"`) before giving up on unencodable characters.
+    Translit = 2
   end
 
+  # Per-codec mutable state for stateful encodings (ISO-2022-JP, UTF-7, HZ, etc.).
+  # Tracks the current encoding mode, internal buffer for multi-byte assembly,
+  # and codec-specific flags.
   struct CodecState
     property mode : UInt8
     property flags : UInt8
