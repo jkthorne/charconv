@@ -336,4 +336,96 @@ describe CharConv::Converter do
       String.new(result).should eq("Hello")
     end
   end
+
+  describe "UTF-8 → UTF-8 fast path" do
+    it "passes through valid ASCII" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      input = "Hello, World!".to_slice
+      result = c.convert(input)
+      result.should eq(input)
+    end
+
+    it "passes through valid multi-byte UTF-8" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      input = "Hello 世界! 🌍 café".to_slice
+      result = c.convert(input)
+      result.should eq(input)
+    end
+
+    it "rejects overlong 2-byte sequence" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      # 0xC0 0x80 = overlong NUL
+      input = Bytes[0xC0, 0x80]
+      dst = Bytes.new(10)
+      _consumed, _written, status = c.convert_with_status(input, dst)
+      status.should eq(CharConv::ConvertStatus::EILSEQ)
+    end
+
+    it "rejects surrogates encoded in UTF-8" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      # U+D800 = ED A0 80
+      input = Bytes[0xED, 0xA0, 0x80]
+      dst = Bytes.new(10)
+      _consumed, _written, status = c.convert_with_status(input, dst)
+      status.should eq(CharConv::ConvertStatus::EILSEQ)
+    end
+
+    it "handles truncated sequence at buffer boundary" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      # 3-byte sequence missing last byte
+      input = Bytes[0xE4, 0xB8]
+      dst = Bytes.new(10)
+      consumed, _written, status = c.convert_with_status(input, dst)
+      status.should eq(CharConv::ConvertStatus::EINVAL)
+      consumed.should eq(0)
+    end
+
+    it "pure ASCII input is fast-pathed" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      input = Bytes.new(1024, 0x41_u8) # 1KB of 'A'
+      result = c.convert(input)
+      result.should eq(input)
+    end
+
+    it "pure non-ASCII (2-byte) input works" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      # 100 × é (0xC3 0xA9)
+      input = Bytes.new(200) { |i| i.even? ? 0xC3_u8 : 0xA9_u8 }
+      result = c.convert(input)
+      result.should eq(input)
+    end
+
+    it "IGNORE skips invalid bytes" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8//IGNORE")
+      # "Hi" + 0xFF (invalid) + "!"
+      input = Bytes[0x48, 0x69, 0xFF, 0x21]
+      result = c.convert(input)
+      result.should eq(Bytes[0x48, 0x69, 0x21])
+    end
+
+    it "4-byte sequences (emoji) pass through" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      input = "🎉🎊🎈".to_slice
+      result = c.convert(input)
+      result.should eq(input)
+    end
+
+    it "E2BIG when output buffer is too small" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      input = "Hello World".to_slice
+      dst = Bytes.new(5)
+      consumed, written, status = c.convert_with_status(input, dst)
+      status.should eq(CharConv::ConvertStatus::E2BIG)
+      consumed.should eq(5)
+      written.should eq(5)
+    end
+
+    it "rejects bytes > 0xF4" do
+      c = CharConv::Converter.new("UTF-8", "UTF-8")
+      input = Bytes[0xF5, 0x80, 0x80, 0x80]
+      dst = Bytes.new(10)
+      _consumed, _written, status = c.convert_with_status(input, dst)
+      status.should eq(CharConv::ConvertStatus::EILSEQ)
+    end
+  end
 end

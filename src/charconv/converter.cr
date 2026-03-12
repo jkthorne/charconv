@@ -452,6 +452,8 @@ class CharConv::Converter
       convert_singlebyte_to_utf8(src, dst)
     elsif @from.id.utf8? && @to.ascii_superset && @to.max_bytes_per_char == 1 && !@encode_table.null?
       convert_utf8_to_singlebyte(src, dst)
+    elsif @from.id.utf8? && @to.id.utf8?
+      convert_utf8_to_utf8(src, dst)
     elsif @from.ascii_superset && @to.ascii_superset
       convert_ascii_fast(src, dst)
     else
@@ -592,6 +594,105 @@ class CharConv::Converter
     @state_decode = CodecState.new
     @state_encode = CodecState.new
     init_codec_modes
+  end
+
+  # UTF-8 → UTF-8 fast path: validates and copies directly, no decode-pivot-encode.
+  # Reuses scan_ascii_run + memcpy for ASCII runs; validates multi-byte sequences inline.
+  private def convert_utf8_to_utf8(src : Bytes, dst : Bytes) : {Int32, Int32, ConvertStatus}
+    src_pos = 0
+    dst_pos = 0
+
+    while src_pos < src.size
+      # Fast ASCII scan + memcpy
+      ascii_len = scan_ascii_run(src, src_pos)
+      if ascii_len > 0
+        avail = dst.size - dst_pos
+        copy_len = Math.min(ascii_len, avail)
+        (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, copy_len)
+        src_pos += copy_len
+        dst_pos += copy_len
+        return {src_pos, dst_pos, ConvertStatus::E2BIG} if copy_len < ascii_len
+        next
+      end
+
+      # Non-ASCII: validate UTF-8 sequence and copy directly
+      b0 = src.unsafe_fetch(src_pos).to_u32
+      remaining = src.size - src_pos
+
+      if b0 < 0xC2 || b0 > 0xF4
+        # Invalid lead byte (0x80-0xBF continuations, 0xC0-0xC1 overlong, > 0xF4)
+        if @flags.ignore?
+          src_pos += 1
+          next
+        end
+        return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+      end
+
+      if b0 < 0xE0
+        # 2-byte sequence
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if remaining < 2
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        unless b1 & 0xC0 == 0x80
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        seq_len = 2
+      elsif b0 < 0xF0
+        # 3-byte sequence
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if remaining < 3
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        b2 = src.unsafe_fetch(src_pos + 2).to_u32
+        unless (b1 & 0xC0 == 0x80) && (b2 & 0xC0 == 0x80)
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
+        if cp < 0x0800 || (cp >= 0xD800 && cp <= 0xDFFF)
+          if @flags.ignore?
+            src_pos += 3
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        seq_len = 3
+      else
+        # 4-byte sequence
+        return {src_pos, dst_pos, ConvertStatus::EINVAL} if remaining < 4
+        b1 = src.unsafe_fetch(src_pos + 1).to_u32
+        b2 = src.unsafe_fetch(src_pos + 2).to_u32
+        b3 = src.unsafe_fetch(src_pos + 3).to_u32
+        unless (b1 & 0xC0 == 0x80) && (b2 & 0xC0 == 0x80) && (b3 & 0xC0 == 0x80)
+          if @flags.ignore?
+            src_pos += 1
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F)
+        if cp < 0x10000 || cp > 0x10FFFF
+          if @flags.ignore?
+            src_pos += 4
+            next
+          end
+          return {src_pos, dst_pos, ConvertStatus::EILSEQ}
+        end
+        seq_len = 4
+      end
+
+      # Copy validated sequence
+      return {src_pos, dst_pos, ConvertStatus::E2BIG} if dst.size - dst_pos < seq_len
+      (src.to_unsafe + src_pos).copy_to(dst.to_unsafe + dst_pos, seq_len)
+      src_pos += seq_len
+      dst_pos += seq_len
+    end
+
+    {src_pos, dst_pos, ConvertStatus::OK}
   end
 
   # ISO-8859-1 → UTF-8 fast path: pure bit math, no tables needed.
