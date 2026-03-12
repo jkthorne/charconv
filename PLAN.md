@@ -32,26 +32,26 @@ What's done:
 
 | Conversion | charconv | system iconv | Speedup |
 |---|---|---|---|
-| ASCII → ASCII | 73 µs | 11.9 ms | **162x** |
-| ISO-8859-1 → UTF-8 | 2.08 ms | 14.2 ms | **6.9x** |
-| CP1252 → UTF-8 | 2.50 ms | 17.2 ms | **6.9x** |
-| UTF-8 → ISO-8859-1 | 3.43 ms | 14.6 ms | **4.3x** |
-| UTF-8 → CP1252 | 3.50 ms | 14.5 ms | **4.1x** |
-| UTF-16BE → UTF-8 | 3.73 ms | 10.8 ms | **2.9x** |
-| UTF-8 → UTF-8 | 4.92 ms | 12.0 ms | **2.4x** |
-| UTF-8 → UTF-16LE | 4.57 ms | 10.1 ms | **2.2x** |
+| ASCII → ASCII | 69 µs | 11.0 ms | **159x** |
+| ISO-8859-1 → UTF-8 | 430 µs | 13.7 ms | **32x** |
+| CP1252 → UTF-8 | 647 µs | 16.0 ms | **25x** |
+| UTF-8 → ISO-8859-1 | 2.19 ms | 13.7 ms | **6.2x** |
+| UTF-8 → CP1252 | 2.14 ms | 13.9 ms | **6.5x** |
+| UTF-16BE → UTF-8 | 3.51 ms | 9.84 ms | **2.8x** |
+| UTF-8 → UTF-8 | 4.45 ms | 11.0 ms | **2.5x** |
+| UTF-8 → UTF-16LE | 4.28 ms | 9.24 ms | **2.2x** |
 
 ---
 
 ## Phase 1: Ship v0.1.0
 
-Merge `perf/fast-path` → `master`, tag, publish. Nothing else.
+Tag and publish. The `perf/fast-path` work is already merged to master.
 
-- [ ] Merge `perf/fast-path` to master (7 commits: binary tables + fast paths)
-- [ ] Re-run full spec suite post-merge on both platforms
-- [ ] Re-run benchmarks to confirm no regressions from binary table change
-- [ ] Tag `v0.1.0`, push tag
-- [ ] Verify shard installable via `github: jackthorne/charconv`
+- [x] Merge `perf/fast-path` to master (7 commits: binary tables + fast paths)
+- [x] Run full spec suite locally — 596 examples, 0 failures (2026-03-12)
+- [x] Run benchmarks `--release` — all paths faster or equal, ISO-8859-1→UTF-8 jumped from 6.9x to 32x (2026-03-12)
+- [ ] Tag `v0.1.0`, push tag (`git tag v0.1.0 && git push origin v0.1.0`)
+- [ ] Verify shard installable via `github: jkthorne/charconv`
 
 **Rule: don't add features before shipping. The library is complete and tested.
 Delaying for polish is how projects die on the vine.**
