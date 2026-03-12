@@ -20,7 +20,7 @@ Add to your `shard.yml`:
 ```yaml
 dependencies:
   charconv:
-    github: jackthorne/charconv
+    github: jkthorne/charconv
 ```
 
 ## Usage
