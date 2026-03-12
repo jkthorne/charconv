@@ -146,6 +146,50 @@ describe "Benchmarks" do
       x.report("system iconv") { bench_system_iconv(utf8_data, "UTF-8", "UTF-16LE", out_4mb) }
     end
 
+    # Phase 4: CJK encode benchmarks
+    # Generate CJK-heavy UTF-8 data (mix of ASCII + CJK ideographs)
+    cjk_utf8 = IO::Memory.new(SIZE)
+    rng_cjk = Random.new(42)
+    while cjk_utf8.pos < SIZE - 4
+      if rng_cjk.rand < 0.3
+        cjk_utf8.write_byte((0x20 + rng_cjk.rand(95)).to_u8)
+      else
+        cp = 0x4E00 + rng_cjk.rand(0x5000) # CJK Unified Ideographs
+        cjk_utf8.write_byte((0xE0 | (cp >> 12)).to_u8)
+        cjk_utf8.write_byte((0x80 | ((cp >> 6) & 0x3F)).to_u8)
+        cjk_utf8.write_byte((0x80 | (cp & 0x3F)).to_u8)
+      end
+    end
+    cjk_utf8_data = cjk_utf8.to_slice[0, Math.min(cjk_utf8.pos, SIZE)]
+
+    puts "\n--- UTF-8 → EUC-JP (70% CJK) ---"
+    conv = CharConv::Converter.new("UTF-8", "EUC-JP")
+    Benchmark.ips do |x|
+      x.report("charconv") { conv.convert(cjk_utf8_data, out_4mb) }
+      x.report("system iconv") { bench_system_iconv(cjk_utf8_data, "UTF-8", "EUC-JP", out_4mb) }
+    end
+
+    puts "\n--- UTF-8 → GBK (70% CJK) ---"
+    conv = CharConv::Converter.new("UTF-8", "GBK")
+    Benchmark.ips do |x|
+      x.report("charconv") { conv.convert(cjk_utf8_data, out_4mb) }
+      x.report("system iconv") { bench_system_iconv(cjk_utf8_data, "UTF-8", "GBK", out_4mb) }
+    end
+
+    puts "\n--- UTF-8 → EUC-KR (70% CJK) ---"
+    conv = CharConv::Converter.new("UTF-8", "EUC-KR")
+    Benchmark.ips do |x|
+      x.report("charconv") { conv.convert(cjk_utf8_data, out_4mb) }
+      x.report("system iconv") { bench_system_iconv(cjk_utf8_data, "UTF-8", "EUC-KR", out_4mb) }
+    end
+
+    puts "\n--- UTF-8 → EUC-CN (70% CJK) ---"
+    conv = CharConv::Converter.new("UTF-8", "EUC-CN")
+    Benchmark.ips do |x|
+      x.report("charconv") { conv.convert(cjk_utf8_data, out_4mb) }
+      x.report("system iconv") { bench_system_iconv(cjk_utf8_data, "UTF-8", "EUC-CN", out_4mb) }
+    end
+
     puts "\n" + "=" * 60
   end
 end
